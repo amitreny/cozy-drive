@@ -1,0 +1,29 @@
+:root { --paper: #fbf3e4; --ink: #3a3129; --accent: #d9704f; --soft: rgba(251, 243, 228, 0.88); }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #20262e; font-family: 'Trebuchet MS', system-ui, sans-serif; color: var(--ink); }
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; background: #20262e; color: var(--paper); font-size: 22px; letter-spacing: 0.04em; }
+.panel { background: var(--soft); border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); padding: 10px 14px; }
+.hud-speed { position: absolute; right: 18px; bottom: 18px; min-width: 170px; text-align: right; }
+.hud-speed .big { font-size: 44px; font-weight: 700; line-height: 1; }
+.hud-speed .small { font-size: 13px; opacity: 0.75; }
+.rpm { height: 6px; border-radius: 3px; background: rgba(58,49,41,0.15); margin-top: 6px; overflow: hidden; }
+.rpm > div { height: 100%; background: var(--accent); width: 0; }
+.hud-info { position: absolute; left: 18px; bottom: 18px; font-size: 14px; line-height: 1.5; }
+.hud-info b { color: var(--accent); }
+.prompt { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); font-size: 18px; display: none; }
+.help { position: absolute; left: 18px; top: 18px; font-size: 13px; line-height: 1.6; max-width: 300px; }
+.help kbd { background: #fff; border-radius: 5px; padding: 0 5px; border: 1px solid #d8ccb8; font-family: inherit; }
+.garage { position: absolute; right: 18px; top: 18px; width: 300px; max-height: calc(100vh - 36px); overflow-y: auto; pointer-events: auto; display: none; font-size: 14px; }
+.garage h2 { margin: 2px 0 8px; font-size: 20px; }
+.garage label { display: block; margin: 8px 0 3px; font-weight: 700; }
+.garage select, .garage input[type=range], .garage input[type=color] { width: 100%; }
+.garage .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.garage button { border: 0; border-radius: 10px; padding: 6px 10px; background: #efe2cc; cursor: pointer; font: inherit; }
+.garage button.on { background: var(--accent); color: #fff; }
+.stats { margin-top: 10px; font-size: 12px; }
+.stats .bar { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.stats .bar span { width: 64px; }
+.stats .bar i { flex: 1; height: 6px; border-radius: 3px; background: rgba(58,49,41,0.12); position: relative; overflow: hidden; }
+.stats .bar i > b { position: absolute; inset: 0 auto 0 0; background: #7fa37a; }
