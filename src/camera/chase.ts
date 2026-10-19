@@ -8,6 +8,7 @@ export class ChaseCamera {
   mode: CamMode = 'chase';
   orbit = 0;                 // extra yaw from mouse drag
   turntable = false;         // garage mode: slow orbit around the car
+  holdOrbit = false;         // keep a fixed orbit angle (screenshots, photo framing)
   private yaw = 0;
   private pos = new THREE.Vector3();
   private look = new THREE.Vector3();
@@ -31,7 +32,7 @@ export class ChaseCamera {
     this.yaw += this.first ? diff : diff * (1 - Math.exp(-3.2 * dt));
     this.idle += dt;
     if (this.turntable) this.orbit += dt * 0.25;
-    else if (this.idle > 2.5 && !this.dragging) this.orbit = damp(this.orbit, 0, 1.5, dt);
+    else if (!this.holdOrbit && this.idle > 2.5 && !this.dragging) this.orbit = damp(this.orbit, 0, 1.5, dt);
 
     if (this.mode === 'hood') {
       const eye = new THREE.Vector3(0, size * 0.55, size * 0.35).applyQuaternion(q).add(target);
