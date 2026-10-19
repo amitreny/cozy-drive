@@ -61,6 +61,10 @@ export class Vehicle {
   prevPos = v3(); curPos = v3();
   prevRot: Q4 = { x: 0, y: 0, z: 0, w: 1 }; curRot: Q4 = { x: 0, y: 0, z: 0, w: 1 };
   private shiftTimer = 0;
+  private shiftUp = false;
+  /** Smoothed chassis acceleration (m/s²), measured per physics step so visuals don't depend on frame pacing. */
+  accLong = 0; accLat = 0;
+  private lastVel = v3(); private hasLastVel = false;
   // scratch vectors (no per-step allocation)
   private t = { pos: v3(), up: v3(), fwd: v3(), right: v3(), a: v3(), b: v3(), c: v3(), wf: v3(), ws: v3(), vel: v3(), mount: v3() };
 
@@ -80,7 +84,7 @@ export class Vehicle {
     if (this.collider) this.world.removeCollider(this.collider, false);
     const [hx, hy, hz] = spec.half, m = spec.mass, [ix, iy, iz] = spec.inertiaScale;
     const inertia = { x: (m / 3) * (hy * hy + hz * hz) * ix, y: (m / 3) * (hx * hx + hz * hz) * iy, z: (m / 3) * (hx * hx + hy * hy) * iz };
-    const cd = this.R.ColliderDesc.roundCuboid(hx - 0.08, hy - 0.08, hz - 0.08, 0.08)
+    const cd = this.bodyHull(spec)
       .setMassProperties(m, { x: 0, y: spec.comY, z: 0 }, inertia, { x: 0, y: 0, z: 0, w: 1 })
       .setFriction(0.35).setRestitution(0.05);
     this.collider = this.world.createCollider(cd, this.body);
@@ -107,6 +111,23 @@ export class Vehicle {
     if (!spec.lockable) this.lockersOn = false;
   }
 
+  /**
+   * Collision shape: full-length top, belly at sill height between the axles, and ends that rise at the
+   * car's approach/departure angle, so bumpers clear slope changes the way a real car's do.
+   */
+  private bodyHull(spec: VehicleSpec): RAPIER.ColliderDesc {
+    const [hx, hy, hz] = spec.half, r = 0.06;
+    const ground = restGroundY(spec), tanA = Math.tan(((spec.approachDeg ?? 25) * Math.PI) / 180);
+    const pts: number[] = [];
+    const zs = [-hz, spec.rear.z - (spec.rear.z + hz) * 0.5, spec.rear.z, spec.front.z, spec.front.z + (hz - spec.front.z) * 0.5, hz];
+    for (const z of zs) {
+      const d = z > spec.front.z ? z - spec.front.z : z < spec.rear.z ? spec.rear.z - z : 0;
+      const bottom = Math.min(hy * 0.6, Math.max(-hy, ground + 0.06 + d * tanA)) + r;
+      for (const x of [-(hx - r), hx - r]) pts.push(x, bottom, z, x, hy - r, z);
+    }
+    return this.R.ColliderDesc.roundConvexHull(new Float32Array(pts), r) ?? this.R.ColliderDesc.roundCuboid(hx - r, hy - r, hz - r, r);
+  }
+
   /** Teleport, keep upright, zero velocity. */
   reset(pos: V3, yaw: number): void {
     this.body.setTranslation(pos, true);
@@ -114,6 +135,7 @@ export class Vehicle {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.gear = 1; this.upsideTime = 0; this.submergedTime = 0; this.needsRescue = false;
+    this.hasLastVel = false; this.accLong = 0; this.accLat = 0;
     this.capture(); this.capture();
   }
 
@@ -141,6 +163,13 @@ export class Vehicle {
     set(t.vel, lv.x, lv.y, lv.z);
     this.speed = dot(t.vel, t.fwd);
     const mCorner = s.mass / 4;
+    if (this.hasLastVel) {
+      const ax = (t.vel.x - this.lastVel.x) / dt, ay = (t.vel.y - this.lastVel.y) / dt, az = (t.vel.z - this.lastVel.z) / dt;
+      const k = 1 - Math.exp(-dt * 8);
+      this.accLong += (clamp(ax * t.fwd.x + ay * t.fwd.y + az * t.fwd.z, -15, 15) - this.accLong) * k;
+      this.accLat += (clamp(ax * t.right.x + ay * t.right.y + az * t.right.z, -15, 15) - this.accLat) * k;
+    }
+    set(this.lastVel, t.vel.x, t.vel.y, t.vel.z); this.hasLastVel = true;
 
     // ---- Suspension ----
     let grounded = 0;
@@ -198,10 +227,12 @@ export class Vehicle {
 
     this.shiftTimer -= dt;
     if (this.gear > 0 && this.shiftTimer <= 0 && grounded > 0) {
-      if (wheelRpm > s.maxRpm * 0.9 && this.gear < s.gears.length) { this.gear++; this.shiftTimer = 0.45; }
-      else if (wheelRpm < s.maxRpm * 0.42 && this.gear > 1) { this.gear--; this.shiftTimer = 0.35; }
+      if (wheelRpm > s.maxRpm * 0.9 && this.gear < s.gears.length) { this.gear++; this.shiftTimer = 0.4; this.shiftUp = true; }
+      else if (wheelRpm < s.maxRpm * 0.42 && this.gear > 1) { this.gear--; this.shiftTimer = 0.35; this.shiftUp = false; }
     }
-    const cut = this.shiftTimer > 0.25 ? 0.15 : 1;
+    // Upshifts dip torque smoothly over 0.25 s instead of cutting it abruptly (no lurch).
+    const shiftP = (0.4 - this.shiftTimer) / 0.25;
+    const cut = this.shiftUp && shiftP >= 0 && shiftP < 1 ? 1 - 0.55 * Math.sin(Math.PI * shiftP) : 1;
     let engineTorque = torqueAt(s.torqueCurve, this.rpm) * throttle * cut;
     if (this.rpm >= s.maxRpm) engineTorque = 0;
     if (throttle < 0.05) engineTorque = -0.1 * torqueAt(s.torqueCurve, this.rpm) * (this.rpm / s.maxRpm) * Math.sign(this.speed) * clamp(Math.abs(this.speed) / 2, 0, 1) * (this.gear > 0 ? 1 : -1);
@@ -264,12 +295,17 @@ export class Vehicle {
       const latMu = mu * (hand ? 0.45 : 1);
       const alpha = Math.atan2(vLat, Math.max(Math.abs(vLong), 2.5));
       let fy = -latMu * w.load * lateralCurve(alpha);
-      fx = clamp(fx, -cap, cap);
+      // A spinning tyre grips less than a gripping one. Low range (4L) meters torque like a crawl gear, and
+      // the Relaxed assist acts as traction control, so they keep (most of) the peak grip.
+      const spinScale = this.lowRange ? 0 : this.assists === 'relaxed' ? 0.4 : this.assists === 'standard' ? 0.8 : 1;
+      const spinLoss = w.driveForce !== 0 && w.slip > 1 ? 1 - 0.3 * spinScale * Math.min(1, (w.slip - 1) * 2) : 1;
+      fx = clamp(fx, -cap * spinLoss, cap * spinLoss);
       const fyMax = Math.sqrt(Math.max(0, (latMu * w.load) ** 2 - 0.6 * fx * fx));
       fy = clamp(fy, -fyMax, fyMax);
 
       // Static friction: a stopped car with no throttle holds its spot (spring to an anchor, limited by grip).
-      const parked = throttle < 0.05 && Math.abs(this.speed) < 0.4 && grounded > 2;
+      // Stopped with no throttle: hold the spot. In 4L the hold engages earlier (hill hold for crawling).
+      const parked = throttle < 0.05 && Math.abs(this.speed) < (this.lowRange ? 1.2 : 0.4) && grounded > 2;
       if (!parked) w.anchored = false;
       else {
         if (!w.anchored) { set(w.anchor, w.point.x, w.point.y, w.point.z); w.anchored = true; }
@@ -351,6 +387,9 @@ export class Vehicle {
     for (const w of this.wheels) if (w.contact && w.load > best) { best = w.load; s = w.surface; }
     return s;
   }
+
+  /** Nose-up angle of the chassis in degrees (positive = climbing). */
+  get pitchDeg(): number { return (Math.asin(clamp(rotate(v3(), this.curRot, v3(0, 0, 1)).y, -1, 1)) * 180) / Math.PI; }
 
   get gearLabel(): string { return this.gear < 0 ? 'R' : String(this.gear) + (this.lowRange ? 'L' : ''); }
 }

@@ -44,6 +44,8 @@ export interface VehicleSpec {
   sound: { cylinders: number; tone: number };
   /** Optional roof or roll-cage collider, in ground-relative coordinates (see bodyDefs). */
   cabin?: { y0: number; y1: number; z0: number; z1: number; hx: number };
+  /** Approach/departure angle in degrees: how steep a slope change the bumpers clear. */
+  approachDeg?: number;
 }
 
 /** Chassis-space height of the ground when the car rests on its springs. */
@@ -82,7 +84,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.4, 2.05, 1.42, 1.08, 0.86], reverse: 3.2, finalDrive: 4.1, lowRange: null,
     layout: 'FWD', frontSplit: 1, diffLock: 0, lockable: false,
     front: axle(0, 0, 1.7, 0.6, 3100, { antiRoll: 0.5 }), rear: axle(0, 0, 1.8, 0, 1700, { antiRoll: 0.45 }),
-    drag: 0.48, wadingDepth: 0.35, sound: { cylinders: 4, tone: 1.0 },
+    drag: 0.48, wadingDepth: 0.35, sound: { cylinders: 4, tone: 1.0 }, approachDeg: 20,
   }, { s: 1.4, frontZ: 0.81, rearZ: -0.81, body: { x: 0.65, y0: 0.15, y1: 1.1, z0: -1.45, z1: 1.4 } }),
   badger: fit({
     id: 'badger', name: 'Badger · off-roader 4×4', mass: 1800, comY: -0.42, inertiaScale: [1.2, 1.5, 1.2], oldRadius: 0.42,
@@ -91,7 +93,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.9, 2.25, 1.48, 1.0, 0.8], reverse: 3.6, finalDrive: 3.9, lowRange: 2.7,
     layout: 'AWD', frontSplit: 0.5, diffLock: 0, lockable: true,
     front: axle(0, 0, 1.35, 0.58, 6500, { zeta: 0.42, antiRoll: 0.35 }), rear: axle(0, 0, 1.45, 0, 4500, { zeta: 0.42, antiRoll: 0.3 }),
-    drag: 0.75, wadingDepth: 0.6, sound: { cylinders: 6, tone: 0.75 },
+    drag: 0.75, wadingDepth: 0.6, sound: { cylinders: 6, tone: 0.75 }, approachDeg: 42,
   }, { s: 1.4, frontZ: 0.76, rearZ: -0.56, body: { x: 0.75, y0: 0.2, y1: 1.3, z0: -1.2, z1: 1.35 } }),
   biscuit: fit({
     id: 'biscuit', name: 'Biscuit · camper van', mass: 2100, comY: -0.25, inertiaScale: [1.2, 1.4, 1.2], oldRadius: 0.36,
@@ -100,7 +102,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [4.0, 2.3, 1.5, 1.05, 0.8], reverse: 3.8, finalDrive: 4.3, lowRange: null,
     layout: 'RWD', frontSplit: 0, diffLock: 0.2, lockable: false,
     front: axle(0, 0, 1.25, 0.55, 7000, { antiRoll: 0.55 }), rear: axle(0, 0, 1.35, 0, 5000, { antiRoll: 0.5 }),
-    drag: 0.95, wadingDepth: 0.45, sound: { cylinders: 4, tone: 0.85 },
+    drag: 0.95, wadingDepth: 0.45, sound: { cylinders: 4, tone: 0.85 }, approachDeg: 20,
   }, { s: 1.35, frontZ: 0.76, rearZ: -0.76, body: { x: 0.75, y0: 0.15, y1: 1.35, z0: -1.4, z1: 1.35 } }),
   maple: fit({
     id: 'maple', name: 'Maple · family sedan', mass: 1250, comY: -0.3, inertiaScale: [1.1, 1.4, 1.1], oldRadius: 0.32,
@@ -109,7 +111,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.5, 2.1, 1.45, 1.1, 0.85], reverse: 3.3, finalDrive: 4.0, lowRange: null,
     layout: 'FWD', frontSplit: 1, diffLock: 0, lockable: false,
     front: axle(0, 0, 1.5, 0.58, 3800, { antiRoll: 0.5 }), rear: axle(0, 0, 1.6, 0, 2200, { antiRoll: 0.45 }),
-    drag: 0.5, wadingDepth: 0.35, sound: { cylinders: 4, tone: 0.95 },
+    drag: 0.5, wadingDepth: 0.35, sound: { cylinders: 4, tone: 0.95 }, approachDeg: 17,
   }, { s: 1.4, frontZ: 0.66, rearZ: -0.66, body: { x: 0.75, y0: 0.15, y1: 1.3, z0: -1.3, z1: 1.25 } }),
   bramble: fit({
     id: 'bramble', name: 'Bramble · pickup', mass: 1900, comY: -0.35, inertiaScale: [1.2, 1.5, 1.2], oldRadius: 0.42,
@@ -118,7 +120,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.8, 2.2, 1.45, 1.0, 0.78], reverse: 3.5, finalDrive: 3.8, lowRange: 2.6,
     layout: 'AWD', frontSplit: 0.4, diffLock: 0.2, lockable: true,
     front: axle(0, 0, 1.35, 0.55, 6800, { zeta: 0.42, antiRoll: 0.35 }), rear: axle(0, 0, 1.5, 0, 4800, { zeta: 0.42, antiRoll: 0.3 }),
-    drag: 0.8, wadingDepth: 0.55, sound: { cylinders: 8, tone: 0.7 },
+    drag: 0.8, wadingDepth: 0.55, sound: { cylinders: 8, tone: 0.7 }, approachDeg: 32,
   }, { s: 1.4, frontZ: 0.86, rearZ: -0.76, body: { x: 0.75, y0: 0.15, y1: 1.3, z0: -1.5, z1: 1.45 } }),
   comet: fit({
     id: 'comet', name: 'Comet · sports coupe', mass: 1300, comY: -0.38, inertiaScale: [1.05, 1.25, 1.05], oldRadius: 0.33,
@@ -127,7 +129,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.2, 2.15, 1.6, 1.25, 1.0, 0.82], reverse: 3.1, finalDrive: 3.7, lowRange: null,
     layout: 'RWD', frontSplit: 0, diffLock: 0.45, lockable: false,
     front: axle(0, 0, 2.1, 0.55, 5200, { zeta: 0.45, antiRoll: 0.65 }), rear: axle(0, 0, 2.2, 0, 3600, { zeta: 0.45, antiRoll: 0.55 }),
-    drag: 0.6, wadingDepth: 0.25, sound: { cylinders: 8, tone: 1.15 },
+    drag: 0.6, wadingDepth: 0.25, sound: { cylinders: 8, tone: 1.15 }, approachDeg: 13,
   }, { s: 1.45, frontZ: 0.66, rearZ: -0.66, body: { x: 0.65, y0: 0.15, y1: 1.1, z0: -1.3, z1: 1.25 } }),
   skipper: {
     id: 'skipper', name: 'Skipper · dune buggy', mass: 650, half: [0.78, 0.35, 1.6], comY: -0.2, inertiaScale: [1.1, 1.3, 1.1],
@@ -136,7 +138,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     gears: [3.0, 2.0, 1.45, 1.12, 0.9], reverse: 3.0, finalDrive: 4.2, lowRange: null,
     layout: 'RWD', frontSplit: 0, diffLock: 0.5, lockable: false,
     front: axle(1.2, 0.8, 1.15, 0.6, 2800, { zeta: 0.45 }), rear: axle(-1.15, 0.82, 1.25, 0, 2200, { zeta: 0.45 }),
-    drag: 0.42, wadingDepth: 0.35, sound: { cylinders: 2, tone: 1.3 },
+    drag: 0.42, wadingDepth: 0.35, sound: { cylinders: 2, tone: 1.3 }, approachDeg: 50,
     cabin: { y0: 0.95, y1: 1.75, z0: -0.95, z1: 0.25, hx: 0.62 },
   },
 };

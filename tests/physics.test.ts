@@ -68,3 +68,29 @@ describe('vehicle acceptance (docs/03 targets)', () => {
     expect(badger).toBeGreaterThan(60);
   });
 });
+
+describe('hill climbing with skill (4×4 setups)', () => {
+  const climbs = (carType: string, deg: number, surface: number, opts: { low?: boolean; lock?: boolean; tyre?: 'mud'; pressure?: number } = {}) => {
+    const sim = makeSim({ carType, ...(opts.tyre ? { tyre: opts.tyre } : {}) }, { surface: surface as never, slopeDeg: deg });
+    sim.car.lowRange = !!opts.low; sim.car.lockersOn = !!opts.lock;
+    if (opts.pressure) sim.car.pressure = opts.pressure;
+    sim.run(1.5, {});
+    const top = 20 + Math.cos((deg * Math.PI) / 180) * 55;
+    let maxZ = -Infinity;
+    sim.run(40, { throttle: 1 }, () => { maxZ = Math.max(maxZ, sim.pos().z); return maxZ > top; });
+    return maxZ > top;
+  };
+  it('a road hatchback cannot climb a 25° grass slope', () => expect(climbs('pip', 25, S.Grass)).toBe(false));
+  it('the 4×4 in 4H climbs 30° grass but not 35°', () => {
+    expect(climbs('badger', 30, S.Grass)).toBe(true);
+    expect(climbs('badger', 35, S.Grass)).toBe(false);
+  });
+  it('4L + lockers climbs 35° grass and 40° rock', () => {
+    expect(climbs('badger', 35, S.Grass, { low: true, lock: true })).toBe(true);
+    expect(climbs('badger', 40, S.Rock, { low: true, lock: true })).toBe(true);
+  });
+  it('mud tyres aired down add the last few degrees: 40° grass', () => {
+    expect(climbs('badger', 40, S.Grass, { low: true, lock: true })).toBe(false);
+    expect(climbs('badger', 40, S.Grass, { low: true, lock: true, tyre: 'mud', pressure: 1.0 })).toBe(true);
+  });
+});

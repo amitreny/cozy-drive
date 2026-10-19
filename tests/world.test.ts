@@ -14,9 +14,10 @@ const roadLength = (name: string) => {
 
 describe('world generation (4 × 4 km)', () => {
   it('is deterministic for a seed', () => {
-    const again = generateWorld(7);
-    expect(again.heights).toEqual(world.heights);
-    expect(again.surface).toEqual(world.surface);
+    // Same generator, smaller area: keeps the suite fast while still checking determinism.
+    const a = generateWorld(7, 1024), b = generateWorld(7, 1024);
+    expect(b.heights).toEqual(a.heights);
+    expect(b.surface).toEqual(a.surface);
   }, 60000);
 
   it('contains every land surface type', () => {

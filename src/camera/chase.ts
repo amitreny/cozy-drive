@@ -15,6 +15,8 @@ export class ChaseCamera {
   private idle = 0;
   private dragging = false;
   private first = true;
+  private prevDesired = new THREE.Vector3();
+  private prevLookT = new THREE.Vector3();
 
   constructor(public cam: THREE.PerspectiveCamera, canvas: HTMLElement, private groundAt: (x: number, z: number) => number) {
     canvas.addEventListener('pointerdown', () => { this.dragging = true; });
@@ -49,13 +51,22 @@ export class ChaseCamera {
     const desired = new THREE.Vector3(target.x + Math.sin(a) * dist, target.y + height, target.z + Math.cos(a) * dist);
     const floor = this.groundAt(desired.x, desired.z) + 1.0;
     if (desired.y < floor) desired.y = floor;
-    if (this.first) { this.pos.copy(desired); this.look.copy(target); this.first = false; }
-    this.pos.x = damp(this.pos.x, desired.x, 6, dt);
-    this.pos.z = damp(this.pos.z, desired.z, 6, dt);
-    this.pos.y = damp(this.pos.y, desired.y, 4, dt);
     const ahead = this.turntable ? 0 : Math.min(Math.max(speed, 0), 30) * 0.12;
     const lookT = new THREE.Vector3(target.x + Math.sin(this.yaw) * ahead, target.y + 0.8 * (size / 2), target.z + Math.cos(this.yaw) * ahead);
-    this.look.lerp(lookT, 1 - Math.exp(-8 * dt));
+    if (this.first) { this.pos.copy(desired); this.look.copy(lookT); this.prevDesired.copy(desired); this.prevLookT.copy(lookT); this.first = false; }
+    // Follow in small fixed sub-steps along the target's path since last frame, so the camera's
+    // lag stays constant when frame times vary (otherwise the car appears to slide back and forth).
+    const n = Math.max(1, Math.ceil(dt / (1 / 240))), h = dt / n;
+    const d = new THREE.Vector3(), l = new THREE.Vector3();
+    for (let i = 1; i <= n; i++) {
+      d.lerpVectors(this.prevDesired, desired, i / n);
+      l.lerpVectors(this.prevLookT, lookT, i / n);
+      this.pos.x = damp(this.pos.x, d.x, 6, h);
+      this.pos.z = damp(this.pos.z, d.z, 6, h);
+      this.pos.y = damp(this.pos.y, d.y, 4, h);
+      this.look.lerp(l, 1 - Math.exp(-8 * h));
+    }
+    this.prevDesired.copy(desired); this.prevLookT.copy(lookT);
     this.cam.position.copy(this.pos);
     this.cam.lookAt(this.look);
     this.cam.fov = damp(this.cam.fov, 58 + Math.min(Math.abs(speed), 40) * 0.15, 3, dt);

@@ -8,9 +8,7 @@ import type { Vehicle } from './vehicle';
 export class CarVisual {
   model!: CarModel;
   private roll = 0; private rollV = 0; private pitch = 0; private pitchV = 0;
-  private prevVel = new THREE.Vector3(); private acc = new THREE.Vector3();
   private qa = new THREE.Quaternion(); private qb = new THREE.Quaternion();
-  private fwd = new THREE.Vector3(); private right = new THREE.Vector3();
   private env: THREE.Texture | null = null;
 
   constructor(private scene: THREE.Scene, spec: VehicleSpec, build: Build) { this.rebuild(spec, build); }
@@ -42,20 +40,16 @@ export class CarVisual {
     this.qb.set(v.curRot.x, v.curRot.y, v.curRot.z, v.curRot.w);
     root.quaternion.slerpQuaternions(this.qa, this.qb, alpha);
 
-    // Feel layer: exaggerated roll and pitch from acceleration, on a soft spring.
+    // Feel layer: soft roll and pitch from the physics-rate acceleration, integrated in fixed
+    // sub-steps so uneven frame times never make the body rock.
     if (dt > 0) {
-      const lv = v.body.linvel();
-      this.acc.set(lv.x, lv.y, lv.z).sub(this.prevVel).divideScalar(dt);
-      this.prevVel.set(lv.x, lv.y, lv.z);
-      this.fwd.set(0, 0, 1).applyQuaternion(root.quaternion);
-      this.right.set(-1, 0, 0).applyQuaternion(root.quaternion);
-      const grounded = !v.airborne;
-      const lat = grounded ? THREE.MathUtils.clamp(this.acc.dot(this.right), -12, 12) : 0;
-      const lon = grounded ? THREE.MathUtils.clamp(this.acc.dot(this.fwd), -12, 12) : 0;
-      const k = 70, c = 2 * Math.sqrt(k) * 0.45;
-      this.rollV += (k * (-lat * 0.0035 - this.roll) - c * this.rollV) * dt;
-      this.pitchV += (k * (-lon * 0.003 - this.pitch) - c * this.pitchV) * dt;
-      this.roll += this.rollV * dt; this.pitch += this.pitchV * dt;
+      const lat = v.airborne ? 0 : v.accLat, lon = v.airborne ? 0 : v.accLong;
+      const k = 70, c = 2 * Math.sqrt(k) * 0.6, n = Math.max(1, Math.ceil(dt / (1 / 120))), h = Math.min(dt, 0.1) / n;
+      for (let i = 0; i < n; i++) {
+        this.rollV += (k * (-lat * 0.0035 - this.roll) - c * this.rollV) * h;
+        this.pitchV += (k * (-lon * 0.003 - this.pitch) - c * this.pitchV) * h;
+        this.roll += this.rollV * h; this.pitch += this.pitchV * h;
+      }
       this.model.body.rotation.set(this.pitch, 0, this.roll);
     }
 

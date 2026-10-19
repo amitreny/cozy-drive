@@ -189,6 +189,8 @@ async function boot(): Promise<void> {
     if (vehicle.canFlip) prompt = 'Press R to flip back onto your wheels';
     else if (vehicle.submergedTime > 0.2) prompt = 'Too deep! The engine sputters…';
     else if (vehicle.waterDepth > spec.wadingDepth * 0.75) prompt = 'Careful, the water is getting deep';
+    else if (spec.lowRange && input.controls.throttle > 0.5 && vehicle.pitchDeg > 14 && Math.abs(vehicle.speed) < 1.5 && (!vehicle.lowRange || !vehicle.lockersOn))
+      prompt = `Steep! Try ${vehicle.lowRange ? '' : 'low range (F)'}${!vehicle.lowRange && !vehicle.lockersOn ? ' and ' : ''}${vehicle.lockersOn ? '' : 'lockers (L)'}`;
     hud.showPrompt(garage.open ? null : prompt);
     if (vehicle.needsRescue) rescue();
 
@@ -214,7 +216,7 @@ async function boot(): Promise<void> {
 
   loading.remove();
   loop.start();
-  (window as unknown as { __game: unknown }).__game = { vehicle, sky, world, input, chase, terrainPhysics, cruise, scene, renderer, terrain };
+  (window as unknown as { __game: unknown }).__game = { vehicle, visual, sky, skyEnv, casters, particles, world, input, chase, terrainPhysics, cruise, scene, renderer, terrain, loop };
 }
 
 boot().catch((err) => {

@@ -27,7 +27,7 @@ npm run smoke      # builds, opens the game in installed Chrome, drives, checks 
 ```
 
 For realistic frame rates in the smoke test on a machine with a GPU: `SMOKE_GPU=1 node tools/smoke.mjs <screenshot-dir>`.
-To screenshot a tour of the island: `node tools/tour.mjs <screenshot-dir>`. To measure frame rate per layer: `node tools/perf.mjs`.
+To screenshot a tour of the island: `node tools/tour.mjs <screenshot-dir>`. To measure frame rate per layer: `node tools/perf.mjs`. To measure driving smoothness: `node tools/smoothness.mjs` (add `THROTTLE=4` to emulate a slow CPU).
 To screenshot every car type in the garage: `npm run build && node tools/cars.mjs <screenshot-dir> [hour]`.
 
 ## Controls

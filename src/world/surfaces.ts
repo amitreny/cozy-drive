@@ -24,8 +24,8 @@ export const SURFACES: SurfaceDef[] = [
   def('Asphalt', 1.0, 0.012, 0, false, 0x5d5f66, null, [300, 0.7, 0.25], 0),
   def('Cobble', 0.85, 0.02, 0, false, 0x9a8f84, null, [160, 1.2, 0.55], 0.6),
   def('Gravel', 0.65, 0.03, 0.01, false, 0x9a9283, 0xc9c0ae, [2400, 0.6, 0.8], 0.35),
-  def('Dirt', 0.7, 0.03, 0.015, false, 0xa77a52, 0xc49a70, [900, 0.7, 0.5], 0.25),
-  def('Grass', 0.55, 0.05, 0.02, false, 0x8db35f, 0x7fa552, [1800, 0.5, 0.35], 0.2),
+  def('Dirt', 0.75, 0.03, 0.015, false, 0xa77a52, 0xc49a70, [900, 0.7, 0.5], 0.25),
+  def('Grass', 0.62, 0.05, 0.02, false, 0x8db35f, 0x7fa552, [1800, 0.5, 0.35], 0.2),
   def('Mud', 0.35, 0.08, 0.07, true, 0x5e4630, 0x4e3a28, [260, 1.5, 0.7], 0.15),
   def('Sand', 0.45, 0.15, 0.06, true, 0xe8d3a2, 0xeedcb0, [3800, 0.5, 0.55], 0.1),
   def('Snow', 0.35, 0.08, 0.06, true, 0xf4f7fb, 0xffffff, [1300, 0.9, 0.45], 0.1),
@@ -66,6 +66,8 @@ export function pressureEffect(surface: SurfaceId, pressure: number): { grip: nu
   const low = Math.max(0, Math.min(1, (2.0 - pressure) / 1.2)); // 0 at 2.0 bar, 1 at 0.8 bar
   const high = Math.max(0, Math.min(1, (pressure - 2.0) / 0.6));
   if (SURFACES[surface].soft) return { grip: 1 + 0.25 * low - 0.1 * high, crr: 1 - 0.35 * low + 0.2 * high, sink: 1 - 0.4 * low };
+  // Firm off-road ground: a bigger contact patch still grips better (rock crawlers air down too).
+  if (surface === S.Grass || surface === S.Dirt || surface === S.Gravel || surface === S.Rock) return { grip: 1 + 0.14 * low - 0.06 * high, crr: 1 + 0.2 * low - 0.1 * high, sink: 1 };
   return { grip: 1 - 0.1 * low, crr: 1 + 0.5 * low - 0.15 * high, sink: 1 };
 }
 
