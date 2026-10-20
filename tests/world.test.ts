@@ -48,7 +48,7 @@ describe('world generation (4 × 4 km)', () => {
         if (i % 5 === 0) worst = Math.max(worst, Math.abs(heightAt(world, r.xs[i], r.zs[i]) - r.hs[i]));
       }
       expect(worst, `${r.def.name} carve`).toBeLessThan(0.6);
-      expect(maxGrade, `${r.def.name} grade`).toBeLessThan(MAX_GRADE[r.def.kind] + 0.005);
+      expect(maxGrade, `${r.def.name} grade`).toBeLessThan((r.def.maxGrade ?? MAX_GRADE[r.def.kind]) + 0.005);
     }
   });
 

@@ -95,6 +95,11 @@ export function placeViewpoints(w: WorldData): Viewpoint[] {
     const off = r.def.width / 2 + 2.5, x = rx + Math.sin(bestYaw) * off, z = rz + Math.cos(bestYaw) * off;
     return { id, name, x, y: Math.max(heightAt(w, x, z), ry - 0.5), z, yaw: bestYaw };
   };
+  // The top of the Summit Road: a pad on the island's highest point with a view all round.
+  const sr = roadByName(w, 'Summit Road'), e = sr.xs.length - 1, [sYaw] = vista(sr.xs[e], sr.zs[e]);
+  const sx = sr.xs[e] + Math.sin(sYaw) * 6, sz = sr.zs[e] + Math.cos(sYaw) * 6;
+  const summitVp: Viewpoint = { id: 'vp-summit', name: 'Summit', x: sx, y: heightAt(w, sx, sz), z: sz, yaw: sYaw };
+  placed.push(summitVp);
   // Coast first (most constrained), then inland spots, each keeping 500 m from the others.
   const north = pick('vp-north', 'Northern Shore', 'Coastal Highway', (_x, z) => z);
   const east = pick('vp-east', 'Lighthouse Point', 'Coastal Highway', (x) => x);
@@ -105,7 +110,7 @@ export function placeViewpoints(w: WorldData): Viewpoint[] {
   const lake = pick('vp-lake', 'Lakeside', 'Forest Track', (x, z) => -Math.hypot(x - w.waters[0].x, z - w.waters[0].z));
   const marsh = pick('vp-marsh', 'Boardwalk End', 'Boardwalk', (x) => -x);
   // Off-road reward: a high, fairly gentle spot in the mountains with a wide view. Needs a capable 4×4.
-  let summit: Viewpoint | null = null, bestS = -Infinity;
+  let cairn: Viewpoint | null = null, bestS = -Infinity;
   for (let x = -600; x <= 1000; x += 16) for (let z = 500; z <= 1500; z += 16) {
     if (regionsAt(x, z).mountain < 0.5 || !far(x, z) || !isDry(w, x, z, 1)) continue;
     const h = heightAt(w, x, z), slope = Math.hypot(heightAt(w, x + 3, z) - heightAt(w, x - 3, z), heightAt(w, x, z + 3) - heightAt(w, x, z - 3)) / 6;
@@ -113,8 +118,9 @@ export function placeViewpoints(w: WorldData): Viewpoint[] {
     const [yaw, drop] = vista(x, z);
     if (drop === -Infinity) continue;
     const s = h + Math.min(600, drop) * 0.3;
-    if (s > bestS) { bestS = s; summit = { id: 'vp-summit', name: 'Summit Cairn', x, y: h, z, yaw }; }
+    if (PAVED.has(surfaceAt(w, x, z))) continue;
+    if (s > bestS) { bestS = s; cairn = { id: 'vp-cairn', name: 'Ridge Cairn', x, y: h, z, yaw }; }
   }
-  if (summit) placed.push(summit);
-  return [mountain, canyon, dunes, lake, marsh, east, west, north, ...(summit ? [summit] : [])];
+  if (cairn) placed.push(cairn);
+  return [summitVp, mountain, canyon, dunes, lake, marsh, east, west, north, ...(cairn ? [cairn] : [])];
 }

@@ -30,6 +30,7 @@ import { SkyEnvironment } from './world/environment';
 import { Sky } from './world/sky';
 import { S, SURFACES } from './world/surfaces';
 import { buildRoads } from './world/terrain';
+import { barrierColliders, buildBarriers, findBarrierRuns, findChevrons } from './world/barriers';
 import { heightAt, isDry, surfaceAt, waterLevelAt, WORLD_VERSION } from './world/terrainGen';
 import { TerrainPhysics } from './world/terrainPhysics';
 import { TerrainRenderer } from './world/terrainRender';
@@ -67,6 +68,9 @@ async function boot(): Promise<void> {
   scene.add(casters.group);
   const water = new Water(world, terrain.heightTex), grass = new Grass(world, terrain.heightTex, terrain.surfTex);
   scene.add(terrain.group, buildRoads(world), water.group, grass.mesh, props, buildVillage(RAPIER, physics, world));
+  // Stone walls along cliff edges (lanterns at night, chevrons on hairpins); solid, so they catch a wide line.
+  const barrierRuns = findBarrierRuns(world), barriers = buildBarriers(world, barrierRuns, findChevrons(world));
+  scene.add(barriers.group); barrierColliders(RAPIER, physics, world, barrierRuns);
   const postfx = new PostFX(renderer, scene, camera);
   const particles = new Particles(2500);
   scene.add(particles.points);
@@ -327,6 +331,7 @@ async function boot(): Promise<void> {
     headlight.position.copy(visual.position).addScaledVector(fwd, spec.half[2]).y += 0.3;
     headlight.target.position.copy(visual.position).addScaledVector(fwd, 25);
     visual.model.headlights.forEach((m) => (m.emissiveIntensity = night ? 3 : 0.4));
+    barriers.setNight(night ? 1 : 0);
 
     // Surface particles from each wheel: dust, gravel, mud, sand, snow, splashes.
     if (!garage.open) vehicle.wheels.forEach((w, i) => {
@@ -383,7 +388,7 @@ async function boot(): Promise<void> {
 
   loading.remove();
   loop.start();
-  (window as unknown as { __game: unknown }).__game = { audio, vehicle, visual, sky, skyEnv, casters, particles, world, input, chase, terrainPhysics, cruise, voices: VOICES, scene, renderer, terrain, loop, postfx, grass, water, progress, gnomes, viewpoints, mapView, autopilot, minimap };
+  (window as unknown as { __game: unknown }).__game = { audio, barriers, vehicle, visual, sky, skyEnv, casters, particles, world, input, chase, terrainPhysics, cruise, voices: VOICES, scene, renderer, terrain, loop, postfx, grass, water, progress, gnomes, viewpoints, mapView, autopilot, minimap };
 }
 
 boot().catch((err) => {

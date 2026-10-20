@@ -120,7 +120,7 @@ A finished, shippable-quality 30 minutes. This is the most important milestone.
 - [ ] Home Valley (~1 × 1 km) at final quality: village, farm, home garage, viewpoint, two trails
 - [ ] 3 cars at final art: hatchback, 4×4, camper van (with camp deploy)
 - [ ] ~40 final parts; stickers v1 (livery texture, 20 stickers); 6 rims; 4 tyre types
-- [x] Activities: 20 collectibles, 3 viewpoints, 5 errands with the jostle meter, 1 campsite _(60 gnomes, 9 viewpoints; errands and campsites not yet)_
+- [x] Activities: 20 collectibles, 3 viewpoints, 5 errands with the jostle meter, 1 campsite _(60 gnomes, 10 viewpoints incl. the Summit Road summit; errands and campsites not yet)_
 - [x] Economy v1 and unlock rules; letters/journal; the 10-minute onboarding from [02](02-game-design.md) _(letters/journal and scripted onboarding not yet)_
 - [x] Photo mode v1 + scrapbook _(automatic viewpoint postcards; a free photo mode is not built yet)_
 - [x] Map v1 with fog of war and waypoints; compass HUD _(no waypoints yet)_

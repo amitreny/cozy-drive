@@ -67,6 +67,10 @@ await car('biscuit', '#6c9bc4');
 await go({ road: 1, i: 420, hours: 11, cam: 'chase' });
 await page.waitForTimeout(3000); await shot('cross-island-highway');
 
+await car('badger', '#c96f8e', 'satin');
+await go({ road: 8, i: 688, hours: 17.4, orbit: 2.3 });
+await page.waitForTimeout(3500); await shot('summit-road');
+
 await go({ x: 8, z: -345, yaw: 0.6, hours: 10.5 });
 await page.evaluate(() => { document.getElementById('ui').style.visibility = 'visible'; });
 await page.waitForTimeout(1500);
@@ -77,6 +81,6 @@ await page.click('button[data-k="wheels"][data-v="truck"]');
 await page.click('button[data-k="lift"][data-v="2"]');
 await page.waitForTimeout(3500); await shot('garage', true);
 
-console.log(errors.length ? `errors:\n${errors.join('\n')}` : 'saved 6 screenshots to docs/screenshots');
+console.log(errors.length ? `errors:\n${errors.join('\n')}` : 'saved 7 screenshots to docs/screenshots');
 await browser.close(); await server.close();
 if (errors.length) process.exit(1);

@@ -3,7 +3,7 @@ import { limitGrade, MAX_GRADE, pinJunctions, ROADS, sampleRoad, segDist, SMOOTH
 import { S, type SurfaceId } from './surfaces';
 
 /** Bump when generation changes so cached worlds are rebuilt. */
-export const WORLD_VERSION = 7;
+export const WORLD_VERSION = 8;
 
 export interface Water { x: number; z: number; r: number; level: number }
 export interface WorldData {
@@ -19,9 +19,11 @@ const near = (x: number, z: number, cx: number, cz: number, inner: number, outer
 
 // Layout of the 4 × 4 km island (+z north). See docs/02 for the regions.
 export const PLAZA = { x: 0, z: -350, r: 24 };
-export const POND = { x: 120, z: 1060, r: 55 };
+export const POND = { x: 320, z: 1000, r: 55 }; // alpine tarn on the plateau east of the pass, seen from the summit
 export const LAKE = { x: -1250, z: 540, r: 150 };
 export const ISLAND_RADIUS = 1750;
+/** Flat pad at the top of the Summit Road: the island's highest drivable point. */
+export const SUMMIT = { r: 9, cut: 4 };
 
 export function regionsAt(x: number, z: number): Regions {
   return {
@@ -45,6 +47,7 @@ export function makeBaseHeight(P: Perlin2): (x: number, z: number, lakeLevels?: 
     let h = 9 + 16 * P.fbm(x * 0.0016, z * 0.0016, 4) + 3 * P.fbm(x * 0.009, z * 0.009, 2);
     if (R.forest > 0) h += R.forest * 22 * (0.5 + 0.5 * P.fbm(x * 0.004, z * 0.004, 3));
     if (R.mountain > 0) h += R.mountain * (40 + 230 * P.ridged(x * 0.0021 + 3, z * 0.0021, 5));
+    if (h > 250) h = 250 + (h - 250) * 0.35; // round the highest peaks into domes the Summit Road can reach
     if (R.canyon > 0) {
       const t = (0.5 + 0.5 * P.fbm(x * 0.0028 + 40, z * 0.0028, 3)) * 4.5;
       const terr = Math.floor(t) + ss(0.82, 1, t - Math.floor(t));
@@ -103,43 +106,70 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
     const { xs, zs } = sampleRoad(def);
     const raw = new Float32Array(xs.length);
     for (let i = 0; i < xs.length; i++) raw[i] = Math.max(sampleGrid(heights, V, cell, half, xs[i], zs[i]), def.kind === 'boardwalk' ? 1.9 : 2.2);
-    let hs = smoothProfile(raw, SMOOTHING[def.kind], !!def.closed);
+    let hs = smoothProfile(raw, def.smoothing ?? SMOOTHING[def.kind], !!def.closed);
     const pinned = pinJunctions(hs, xs, zs, roads, 60);
-    hs = limitGrade(hs, xs, zs, MAX_GRADE[def.kind], !!def.closed, pinned);
+    // A summit road ends just below the peak (which becomes a small flat pad), however much it must climb.
+    if (def.summit) {
+      const last = hs.length - 1, top = raw[last] - SUMMIT.cut;
+      // The last metres lie on the flat summit pad, so they are level too.
+      for (let i = last; i >= 0 && Math.hypot(xs[i] - xs[last], zs[i] - zs[last]) < SUMMIT.r + 2; i--) { hs[i] = top; pinned.push(i); }
+    }
+    hs = limitGrade(hs, xs, zs, def.maxGrade ?? MAX_GRADE[def.kind], !!def.closed, pinned);
     roads.push({ def, xs, zs, hs });
     rawProfiles.push(raw);
   }
+  // Paved cells take the closest road's height exactly. Bank cells blend every road that reaches them, weighted
+  // towards the nearest, so stacked hairpin legs meet in one continuous slope instead of a stepped wall.
   const roadW = new Float32Array(V * V), roadD = new Float32Array(V * V).fill(Infinity), roadS = new Int8Array(V * V).fill(-1);
+  const blendW = new Float32Array(V * V), blendH = new Float32Array(V * V);
+  const verge = new Uint8Array(V * V); // a few metres either side of every road
   const carved = heights.slice();
   roads.forEach((r, ri) => {
-    const hw = r.def.width / 2, base = r.def.kind === 'highway' ? 12 : 6, raw = rawProfiles[ri];
+    const hw = r.def.width / 2, base = r.def.kind === 'highway' ? 12 : 6, raw = rawProfiles[ri], bankMax = r.def.bankMax ?? 40;
     for (let i = 0; i < r.xs.length - 1; i++) {
       const ax = r.xs[i], az = r.zs[i], bx = r.xs[i + 1], bz = r.zs[i + 1];
       // Only visit as far as this segment's banks can reach: cut/fill depth at the centreline, plus margin for side slopes.
       const depth = Math.max(Math.abs(raw[i] - r.hs[i]), Math.abs(raw[i + 1] - r.hs[i + 1]));
-      const reach = hw + 1.5 + Math.min(40, base + (depth + 8) * 1.3);
+      const reach = hw + 1.5 + Math.min(bankMax, base + (depth + 8) * 1.3);
       forCells(n, cell, half, (ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az) / 2 + reach, (k, x, z) => {
         const [d, t] = segDist(x, z, ax, az, bx, bz);
         if (d > reach) return;
         const hr = r.hs[i] + (r.hs[i + 1] - r.hs[i]) * t - 0.02;
         // Cuts and fills get banks of about 37°: the deeper the cut, the wider the blend.
-        const bank = Math.min(40, base + Math.abs(heights[k] - hr) * 1.3);
+        const bank = Math.min(bankMax, base + Math.abs(heights[k] - hr) * 1.3);
         if (d > hw + 1.5 + bank) return;
         // Open road ends don't carve a round cap past the end, so the road they join keeps its own profile.
         if (!r.def.closed && d > hw && ((i === 0 && t <= 0) || (i === r.xs.length - 2 && t >= 1))) return;
-        const w = d <= hw + 1.5 ? 1 : ss(hw + 1.5 + bank, hw + 1.5, d);
-        // Highest weight wins; on a tie the closest segment wins, so steep roads get the height of the right spot.
-        if (w > roadW[k] + 1e-6 || (w > roadW[k] - 1e-6 && d < roadD[k])) { roadW[k] = w; roadD[k] = d; carved[k] = heights[k] * (1 - w) + hr * w; }
+        if (d <= hw + 1.5) {
+          // On a steep road the closest segment gives the height of the right spot.
+          if (d < roadD[k]) { roadD[k] = d; carved[k] = hr; }
+        } else {
+          const w = ss(hw + 1.5 + bank, hw + 1.5, d), p = w * w * w * w;
+          roadW[k] = Math.max(roadW[k], w); blendW[k] += p; blendH[k] += p * hr;
+        }
         if (d <= hw + 0.5 && roadS[k] < 0) roadS[k] = r.def.surface;
+        if (d <= hw + 3) verge[k] = 1;
       });
     }
   });
+  for (let k = 0; k < V * V; k++) {
+    if (roadD[k] === Infinity && blendW[k] > 0) carved[k] = heights[k] * (1 - roadW[k]) + (blendH[k] / blendW[k]) * roadW[k];
+  }
   heights.set(carved);
+  for (const r of roads) if (r.def.summit) {
+    const last = r.xs.length - 1, cx = r.xs[last], cz = r.zs[last], top = r.hs[last];
+    forCells(n, cell, half, cx, cz, SUMMIT.r + 10, (i, x, z) => {
+      const w = ss(SUMMIT.r + 10, SUMMIT.r, Math.hypot(x - cx, z - cz));
+      heights[i] = heights[i] * (1 - w) + top * w;
+      if (w > 0.95) roadS[i] = S.Gravel;
+    });
+  }
 
   onProgress?.('Painting grass, sand, rock and snow');
   for (let iz = 0; iz < V; iz++) for (let ix = 0; ix < V; ix++) {
     const i = iz * V + ix;
     surface[i] = roadS[i] >= 0 ? roadS[i] : classify(P, heights, V, ix, iz, cell, ix * cell - half, iz * cell - half);
+    if (verge[i] && surface[i] === S.Snow) surface[i] = S.Gravel; // plowed, gritted verges on mountain roads
   }
   forCells(n, cell, half, PLAZA.x, PLAZA.z, PLAZA.r, (i, x, z) => { if (Math.hypot(x - PLAZA.x, z - PLAZA.z) < PLAZA.r) surface[i] = S.Cobble; });
   forCells(n, cell, half, POND.x, POND.z, POND.r, (i, x, z) => {
