@@ -1,9 +1,12 @@
 import { Perlin2 } from './noise';
-import { limitGrade, MAX_GRADE, pinJunctions, ROADS, sampleRoad, segDist, SMOOTHING, smoothProfile, type RoadPath } from './roads';
+import { AIRPORTS, along, local } from './airports';
+import { placeLots, type Lot } from './lots';
+import { NETWORK } from './network';
+import { limitGrade, MAX_GRADE, pinJunctions, sampleRoad, segDist, SMOOTHING, smoothProfile, type RoadPath } from './roads';
 import { S, type SurfaceId } from './surfaces';
 
 /** Bump when generation changes so cached worlds are rebuilt. */
-export const WORLD_VERSION = 8;
+export const WORLD_VERSION = 10;
 
 export interface Water { x: number; z: number; r: number; level: number }
 export interface WorldData {
@@ -11,7 +14,12 @@ export interface WorldData {
   heights: Float32Array; surface: Uint8Array;        // row-major: idx = iz * (n + 1) + ix
   roads: RoadPath[]; waters: Water[];
   spawn: { x: number; z: number; yaw: number };
+  /** Homes and businesses (see lots.ts). */
+  lots: Lot[];
+  /** Keep-clear mask at CLEAR_CELL metres: runways, aprons, pads and gardens get no trees or rocks. */
+  clear: Uint8Array;
 }
+export const CLEAR_CELL = 8;
 export interface Regions { mountain: number; canyon: number; dunes: number; marsh: number; forest: number }
 
 const ss = (e0: number, e1: number, v: number) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
@@ -100,13 +108,49 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
     heights[i] = heights[i] * (1 - w) + plazaH * w;
   });
 
+  onProgress?.('Levelling the airfields');
+  const clear = new Uint8Array((size / CLEAR_CELL) ** 2);
+  const markClear = (x: number, z: number) => { const cx = Math.floor((x + half) / CLEAR_CELL), cz = Math.floor((z + half) / CLEAR_CELL), N = size / CLEAR_CELL; if (cx >= 0 && cz >= 0 && cx < N && cz < N) clear[cz * N + cx] = 1; };
+  const waterLevel = (x: number, z: number) => (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r * 1.2 ? levels.get(LAKE)! : Math.hypot(x - POND.x, z - POND.z) < POND.r * 1.2 ? levels.get(POND)! : 0);
+  for (const ap of AIRPORTS) {
+    if (ap.level.length) {
+      // Fit a gentle plane (at most 0.8 % along the runway) to the ground under the levelled areas.
+      const ref = ap.level[0];
+      let n0 = 0, sa = 0, sh = 0, saa = 0, sah = 0;
+      for (const r of ap.level) for (let a = -r.halfLen; a <= r.halfLen; a += 10) for (let c = -r.halfWid; c <= r.halfWid; c += 10) {
+        const [x, z] = along(r, a, c), h = sampleGrid(heights, V, cell, half, x, z), la = local(ref, x, z)[0];
+        n0++; sa += la; sh += h; saa += la * la; sah += la * h;
+      }
+      const ma = sa / n0, mh = sh / n0, k = Math.max(-0.008, Math.min(0.008, (sah - n0 * ma * mh) / Math.max(1, saa - n0 * ma * ma)));
+      const plane = (x: number, z: number) => Math.max(2.5, mh + k * (local(ref, x, z)[0] - ma));
+      const reach = Math.max(...ap.level.map((r) => Math.hypot(r.halfLen, r.halfWid))) + 60;
+      forCells(n, cell, half, ref.cx, ref.cz, reach, (i, x, z) => {
+        let w = 0;
+        for (const r of ap.level) {
+          const [a, c] = local(r, x, z), d = Math.hypot(Math.max(0, Math.abs(a) - r.halfLen), Math.max(0, Math.abs(c) - r.halfWid));
+          w = Math.max(w, ss(50, 0, d));
+          if (d < 8) markClear(x, z);
+        }
+        if (w > 0) heights[i] = heights[i] * (1 - w) + plane(x, z) * w;
+      });
+    }
+    if (ap.pier) {
+      // The pier's root sits on a little levelled landing just clear of the water.
+      const { x0, z0 } = ap.pier, top = Math.max(sampleGrid(heights, V, cell, half, x0, z0), waterLevel(x0, z0) + 1.3);
+      forCells(n, cell, half, x0, z0, 30, (i, x, z) => { const d = Math.hypot(x - x0, z - z0), w = ss(28, 12, d); if (w > 0) heights[i] = heights[i] * (1 - w) + top * w; if (d < 16) markClear(x, z); });
+    }
+  }
+
   onProgress?.('Laying roads and highways');
   const roads: RoadPath[] = [], rawProfiles: Float32Array[] = [];
-  for (const def of ROADS) {
+  for (const def of NETWORK) {
     const { xs, zs } = sampleRoad(def);
     const raw = new Float32Array(xs.length);
-    for (let i = 0; i < xs.length; i++) raw[i] = Math.max(sampleGrid(heights, V, cell, half, xs[i], zs[i]), def.kind === 'boardwalk' ? 1.9 : 2.2);
+    // Roads skirting the lake stay above its water (the water disc reaches 1.15 r); the margin leaves room to ramp up.
+    const lakeFloor = (i: number) => (Math.hypot(xs[i] - LAKE.x, zs[i] - LAKE.z) < LAKE.r * 1.15 + def.width + 40 ? levels.get(LAKE)! + 0.7 : -Infinity);
+    for (let i = 0; i < xs.length; i++) raw[i] = Math.max(sampleGrid(heights, V, cell, half, xs[i], zs[i]), def.kind === 'boardwalk' ? 1.9 : 2.2, lakeFloor(i));
     let hs = smoothProfile(raw, def.smoothing ?? SMOOTHING[def.kind], !!def.closed);
+    for (let i = 0; i < hs.length; i++) hs[i] = Math.max(hs[i], lakeFloor(i));
     const pinned = pinJunctions(hs, xs, zs, roads, 60);
     // A summit road ends just below the peak (which becomes a small flat pad), however much it must climb.
     if (def.summit) {
@@ -165,6 +209,19 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
     });
   }
 
+  onProgress?.('Building homes and shops');
+  const lots = placeLots(roads, { height: (x, z) => sampleGrid(heights, V, cell, half, x, z), water: waterLevel }, PLAZA);
+  for (const l of lots) {
+    const r = { cx: l.x, cz: l.z, dir: l.yaw };
+    forCells(n, cell, half, l.x, l.z, Math.hypot(l.w, l.d) / 2 + 10, (i, x, z) => {
+      const [a, c] = local(r, x, z), d = Math.hypot(Math.max(0, Math.abs(a) - (l.d / 2 + 2.5)), Math.max(0, Math.abs(c) - (l.w / 2 + 2.5)));
+      if (d < 5) markClear(x, z);
+      if (roadD[i] !== Infinity) return; // never lift or sink a road
+      const w = ss(7, 0, d);
+      if (w > 0) heights[i] = heights[i] * (1 - w) + l.y * w;
+    });
+  }
+
   onProgress?.('Painting grass, sand, rock and snow');
   for (let iz = 0; iz < V; iz++) for (let ix = 0; ix < V; ix++) {
     const i = iz * V + ix;
@@ -175,8 +232,15 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
   forCells(n, cell, half, POND.x, POND.z, POND.r, (i, x, z) => {
     if (Math.hypot(x - POND.x, z - POND.z) < POND.r && roadS[i] < 0) { surface[i] = S.Ice; heights[i] = levels.get(POND)!; }
   });
+  // Runways, aprons, taxiways and helipads.
+  for (const ap of AIRPORTS) {
+    const paint = (r: { cx: number; cz: number; dir: number; halfLen: number; halfWid: number }, s: SurfaceId) =>
+      forCells(n, cell, half, r.cx, r.cz, Math.hypot(r.halfLen, r.halfWid) + 2, (i, x, z) => { const [a, c] = local(r, x, z); if (Math.abs(a) <= r.halfLen && Math.abs(c) <= r.halfWid) surface[i] = s; });
+    if (ap.runway) paint(ap.runway, ap.runway.surface);
+    for (const p of ap.paved) paint(p, S.Asphalt);
+  }
   const waters: Water[] = [{ ...LAKE, level: levels.get(LAKE)! }];
-  return { size, n, cell, heights, surface, roads, waters, spawn: { x: PLAZA.x + 4, z: PLAZA.z - 12, yaw: Math.PI } };
+  return { size, n, cell, heights, surface, roads, waters, lots, clear, spawn: { x: PLAZA.x + 4, z: PLAZA.z - 12, yaw: Math.PI } };
 }
 
 function sampleGrid(h: Float32Array, V: number, cell: number, half: number, x: number, z: number): number {
@@ -206,6 +270,12 @@ export function surfaceAt(w: WorldData, x: number, z: number): SurfaceId {
 export function waterLevelAt(w: WorldData, x: number, z: number): number {
   for (const b of w.waters) if (Math.hypot(x - b.x, z - b.z) < b.r * 1.15) return b.level;
   return 0;
+}
+
+/** Inside a runway, apron, pad or garden: no trees or rocks there. */
+export function isClear(w: WorldData, x: number, z: number): boolean {
+  const N = w.size / CLEAR_CELL, cx = Math.floor((x + w.size / 2) / CLEAR_CELL), cz = Math.floor((z + w.size / 2) / CLEAR_CELL);
+  return cx >= 0 && cz >= 0 && cx < N && cz < N && w.clear[cz * N + cx] === 1;
 }
 
 export const isDry = (w: WorldData, x: number, z: number, margin = 0.3): boolean => heightAt(w, x, z) > waterLevelAt(w, x, z) + margin;

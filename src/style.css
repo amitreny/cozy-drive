@@ -75,3 +75,13 @@ body.has-minimap .help { top: 212px; }
 body.titled .minimap { opacity: 0; }
 .minimap { transition: opacity 1s ease; }
 .settings h3 { margin: 12px 0 0; font-size: 15px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }
+.hangar .aircraft-card { margin: 10px 0; padding: 8px 10px; border-radius: 12px; background: #f6ecda; }
+.hangar .aircraft-card button { margin-top: 6px; }
+.hangar .credit { font-size: 10px; opacity: 0.6; margin-top: 4px; }
+.garage .hint, .hangar .hint { font-size: 12px; opacity: 0.8; }
+.jobboard .job, .hangar .job { margin: 8px 0; padding: 7px 9px; border-radius: 10px; background: #f6ecda; }
+.jobboard .job button, .hangar .job button { margin-top: 5px; }
+.jobboard h3, .hangar h3 { margin: 12px 0 4px; font-size: 15px; }
+.tracker { position: absolute; right: 18px; top: 74px; max-width: 360px; font-size: 13px; display: none; pointer-events: none; }
+.tracker .trk { margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tracker .arrow { display: inline-block; color: var(--accent); width: 1.1em; text-align: center; transform-origin: 50% 55%; }

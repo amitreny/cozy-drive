@@ -16,7 +16,7 @@ export function projectToMini(dX: number, dZ: number, yaw: number, headingUp: bo
   return [a * Math.cos(t) - b * Math.sin(t), a * Math.sin(t) + b * Math.cos(t)];
 }
 
-/** Round mini-map in the top-left: heading-up (or north-up), fog of war, viewpoints, compass. Toggle with Tab. */
+/** Round mini-map in the top-left: heading-up (or north-up), viewpoints, compass. Toggle with Tab. */
 export class MiniMap {
   visible = true;
   rotate = true;
@@ -48,7 +48,6 @@ export class MiniMap {
     const g = this.ctx, c = SIZE / 2, base = this.map.baseCanvas(), half = this.w.size / 2;
     const pxPerM = SIZE / 2 / RANGE;                          // minimap pixels per metre
     const bScale = base.width / this.w.size;                  // base-map pixels per metre
-    const fScale = this.map.fog.width / this.w.size;
     const rot = this.rotate ? yaw : 0;
     g.clearRect(0, 0, SIZE, SIZE);
     g.save();
@@ -60,7 +59,6 @@ export class MiniMap {
     const draw = (img: HTMLCanvasElement, s: number) => g.drawImage(img, (half - x - span) * s, (half - z - span) * s, span * 2 * s, span * 2 * s, -span * pxPerM, -span * pxPerM, span * 2 * pxPerM, span * 2 * pxPerM);
     g.imageSmoothingEnabled = true;
     draw(base, bScale);
-    draw(this.map.fog, fScale);
     g.restore();
     g.save();
     g.beginPath(); g.arc(c, c, c - 2, 0, Math.PI * 2); g.clip();
@@ -68,11 +66,18 @@ export class MiniMap {
       const [dx, dy] = projectToMini(v.x - x, v.z - z, yaw, this.rotate, pxPerM);
       if (Math.hypot(dx, dy) > c - 8) continue;
       const got = this.progress.found.has(v.id);
-      if (!got && !this.map.isRevealed(v.x, v.z)) continue;
       g.save(); g.translate(c + dx, c + dy);
       g.fillStyle = got ? '#d9704f' : '#7a6a58'; g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#fff'; g.font = '700 9px Trebuchet MS, sans-serif'; g.textAlign = 'center'; g.fillText(got ? '★' : '?', 0, 3.5);
       g.restore();
+    }
+    // Delivery pins: inside the disc where they are, otherwise on the rim pointing the way.
+    for (const pin of this.map.pins()) {
+      let [dx, dy] = projectToMini(pin.x - x, pin.z - z, yaw, this.rotate, pxPerM);
+      const r = Math.hypot(dx, dy), max = c - 10;
+      if (r > max) { dx *= max / r; dy *= max / r; }
+      g.fillStyle = pin.color; g.strokeStyle = '#fff'; g.lineWidth = 2;
+      g.beginPath(); g.arc(c + dx, c + dy, 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
     }
     g.restore();
     // Car arrow in the centre: points up in heading-up mode, along the heading in north-up mode.

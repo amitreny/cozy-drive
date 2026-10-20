@@ -7,12 +7,15 @@ const FOG = 256;
 /** Top-down, north up: +z is up and +x is to the LEFT (three.js is right-handed, so east of a north-facing driver is -x). */
 export const MAP_FOG_VERSION = 2;
 
-/** Painted island map with fog of war that clears as you explore. Toggle with M. */
+/** Painted island map: the whole island is shown; viewpoints you haven't visited show as ?. Toggle with M. */
 export class MapView {
   open = false;
   private el: HTMLElement; private canvas: HTMLCanvasElement; private side: HTMLElement;
   private base: HTMLCanvasElement | null = null;
   readonly fog = document.createElement('canvas');
+  /** Places worth marking (airports, helipads, docks, businesses), and live pins (delivery destinations). */
+  pois: { x: number; z: number; icon: string; name: string }[] = [];
+  pins: () => { x: number; z: number; color: string }[] = () => [];
   private fogCtx: CanvasRenderingContext2D;
 
   constructor(root: HTMLElement, private w: WorldData, private vps: Viewpoint[], private gnomes: Place[], private progress: Progress, fogData?: string, fogMirrored = false) {
@@ -90,15 +93,26 @@ export class MapView {
     const g = this.canvas.getContext('2d')!, S = this.canvas.width, half = this.w.size / 2;
     const toPx = (x: number, z: number): [number, number] => [((half - x) / this.w.size) * S, ((half - z) / this.w.size) * S];
     g.drawImage(this.base, 0, 0, S, S);
-    g.drawImage(this.fog, 0, 0, S, S);
     g.font = '600 15px Trebuchet MS, sans-serif'; g.textAlign = 'center';
     for (const v of this.vps) {
       const [px, py] = toPx(v.x, v.z), got = this.progress.found.has(v.id);
-      if (!got && !this.isRevealed(v.x, v.z)) continue;
       g.fillStyle = got ? '#d9704f' : '#7a6a58'; g.beginPath(); g.arc(px, py, 9, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#fff'; g.fillText(got ? '★' : '?', px, py + 5);
       if (got) { g.fillStyle = '#3a3129'; g.fillText(v.name, px, py - 14); }
     }
+    g.font = '600 13px Trebuchet MS, sans-serif';
+    for (const p of this.pois) {
+      const [px, py] = toPx(p.x, p.z);
+      g.fillStyle = 'rgba(251,243,228,0.92)'; g.beginPath(); g.arc(px, py, 10, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#3a3129'; g.fillText(p.icon, px, py + 4.5);
+      if (p.icon === '✈' || p.icon === '🛶' || p.icon === 'H') { g.fillStyle = '#3a3129'; g.fillText(p.name, px, py - 14); }
+    }
+    for (const pin of this.pins()) {
+      const [px, py] = toPx(pin.x, pin.z);
+      g.fillStyle = pin.color; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(px, py); g.arc(px, py - 16, 8, Math.PI * 0.8, Math.PI * 2.2); g.closePath(); g.fill(); g.stroke();
+    }
+    g.font = '600 15px Trebuchet MS, sans-serif';
     const [cx, cy] = toPx(carX, carZ);
     g.save(); g.translate(cx, cy); g.rotate(Math.PI - yaw);
     g.fillStyle = '#d9704f'; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
@@ -108,7 +122,7 @@ export class MapView {
     const views = this.vps.filter((v) => this.progress.found.has(v.id)).length;
     this.side.innerHTML = `<h2>Island map</h2>
       <p>Garden gnomes: <b>${found} / ${this.gnomes.length}</b><br>Viewpoints: <b>${views} / ${this.vps.length}</b><br>Acorns: <b>🌰 ${this.progress.creative ? '∞' : this.progress.acorns}</b></p>
-      <p class="hint">Drive to clear the fog. Stop inside a glowing ring to collect a postcard.</p>
+      <p class="hint">Stop inside a glowing ring at a ? to collect a postcard.</p>
       <div class="postcards">${this.progress.postcards.map((p) => `<figure><img src="${p.img}" alt=""><figcaption>${p.name}</figcaption></figure>`).join('') || '<i>No postcards yet</i>'}</div>
       <p class="hint">Press M to close</p>`;
   }

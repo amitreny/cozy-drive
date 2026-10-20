@@ -2,10 +2,8 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { heightAt, PLAZA, type WorldData } from './terrainGen';
 
-const WALLS = [0xf2e3c6, 0xe8c4a0, 0xcfe0d0, 0xf0d7a8, 0xd9c3e0, 0xf5e9da];
-const ROOFS = [0xb5523b, 0x8a5a44, 0x4f6d7a, 0xa04848];
 
-/** A ring of cozy houses around the plaza, plus the home garage. Collision boxes included. */
+/** The home garage on the plaza and the well (the shops around the plaza come from lots.ts / town.ts). */
 export function buildVillage(R: typeof RAPIER, world: RAPIER.World, w: WorldData): THREE.Group {
   const g = new THREE.Group();
   const mat = (c: number) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true });
@@ -32,12 +30,6 @@ export function buildVillage(R: typeof RAPIER, world: RAPIER.World, w: WorldData
   // Home garage on the north-west side, facing the plaza; the village road runs north-south through the gaps.
   const ga = (-35 * Math.PI) / 180, gr = PLAZA.r + 9;
   house(PLAZA.x + Math.sin(ga) * gr, PLAZA.z + Math.cos(ga) * gr, ga + Math.PI, 10, 8, 4.5, 0xf2e3c6, 0x4f6d7a, true);
-  const angles = [40, 75, 110, 145, 255, 285];
-  angles.forEach((deg, i) => {
-    const a = (deg * Math.PI) / 180, r = PLAZA.r + 9;
-    const x = PLAZA.x + Math.sin(a) * r, z = PLAZA.z + Math.cos(a) * r;
-    house(x, z, a + Math.PI, 6 + (i % 3), 6, 3.6 + (i % 2) * 0.8, WALLS[i % WALLS.length], ROOFS[i % ROOFS.length]);
-  });
   // A well in the middle of the plaza.
   const wy = heightAt(w, PLAZA.x - 6, PLAZA.z + 4);
   const well = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.2, 0.9, 10), mat(0x9a8f84));

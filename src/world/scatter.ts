@@ -1,7 +1,7 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { hash2 } from './noise';
 import { S, type SurfaceId } from './surfaces';
-import { heightAt, isDry, PLAZA, regionsAt, surfaceAt, type WorldData } from './terrainGen';
+import { heightAt, isClear, isDry, PLAZA, regionsAt, surfaceAt, type WorldData } from './terrainGen';
 
 export const KINDS = ['pine', 'round', 'bush', 'rock'] as const;
 export const PINE = 0, ROUND = 1, BUSH = 2, ROCK = 3;
@@ -18,7 +18,7 @@ export function scatter(w: WorldData, spacing = 6): Scatter {
     const r3 = hash2(ix, iz, 13);
     if (r3 > 0.6) continue; // cheap early-out: no rule places anything above 0.56
     const px = gx + (hash2(ix, iz, 11) - 0.5) * spacing * 0.9, pz = gz + (hash2(ix, iz, 12) - 0.5) * spacing * 0.9;
-    if (!isDry(w, px, pz, 0.8) || Math.hypot(px - PLAZA.x, pz - PLAZA.z) < PLAZA.r + 12) continue;
+    if (!isDry(w, px, pz, 0.8) || Math.hypot(px - PLAZA.x, pz - PLAZA.z) < PLAZA.r + 12 || isClear(w, px, pz)) continue;
     const su = surfaceAt(w, px, pz);
     if (PAVED.has(su)) continue;
     let nearRoad = false;

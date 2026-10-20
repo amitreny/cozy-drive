@@ -39,6 +39,12 @@ describe('world generation (4 × 4 km)', () => {
     expect(roadLength('Cross-Island Highway')).toBeGreaterThan(2500);
   });
 
+  it('keeps every road above the lake water', () => {
+    for (const r of world.roads) for (let i = 0; i < r.xs.length; i++) for (const lake of world.waters) {
+      if (Math.hypot(r.xs[i] - lake.x, r.zs[i] - lake.z) < lake.r * 1.15 + r.def.width) expect(r.hs[i], `${r.def.name} at ${i}`).toBeGreaterThan(lake.level + 0.3);
+    }
+  });
+
   it('carves every road to its profile and keeps grades within its kind', () => {
     for (const r of world.roads) {
       let worst = 0, maxGrade = 0;

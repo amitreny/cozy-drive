@@ -8,5 +8,5 @@ self.onmessage = (e: MessageEvent<{ seed: number }>) => {
   const world = generateWorld(e.data.seed, 4096, 2, (stage) => post({ type: 'progress', stage }));
   post({ type: 'progress', stage: 'Planting trees' });
   const sc = scatter(world);
-  post({ type: 'done', world, scatter: sc }, [world.heights.buffer, world.surface.buffer, sc.kind.buffer, sc.x.buffer, sc.y.buffer, sc.z.buffer, sc.s.buffer, sc.rot.buffer, sc.tint.buffer]);
+  post({ type: 'done', world, scatter: sc }, [world.heights.buffer, world.surface.buffer, world.clear.buffer, sc.kind.buffer, sc.x.buffer, sc.y.buffer, sc.z.buffer, sc.s.buffer, sc.rot.buffer, sc.tint.buffer]);
 };

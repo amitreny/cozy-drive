@@ -1,5 +1,6 @@
 import { SURFACES } from '../world/surfaces';
 import type { Vehicle } from '../vehicle/vehicle';
+import type { Aircraft } from '../flight/aircraft';
 import engineWorkletUrl from './engineWorklet.ts?worker&url';
 
 /** Volume per channel, 0..1. Saved with the player's settings. */
@@ -18,6 +19,12 @@ export const VOICES: Record<string, EngineVoice> = {
   comet: { cylinders: 8, exhaustHz: 170, brightness: 1.3, pattern: [1, 0.92, 1, 0.95, 1, 0.9, 1, 0.95], rough: 0.06, level: 1.05 },
   biscuit: { cylinders: 4, exhaustHz: 95, brightness: 0.7, pattern: [1, 0.75, 1.05, 0.8], rough: 0.15, level: 0.85 },
   skipper: { cylinders: 2, exhaustHz: 85, brightness: 0.9, pattern: [1, 0.85], rough: 0.18, level: 1.0 },
+  // Aircraft: flat-fours, a seven-cylinder radial, a six for the aerobatic plane, and a turbine for the helicopter.
+  wren: { cylinders: 4, exhaustHz: 95, brightness: 0.85, pattern: [1, 0.96, 1, 0.97], rough: 0.05, level: 1.0 },
+  puffin: { cylinders: 4, exhaustHz: 105, brightness: 0.9, pattern: [1, 0.95, 1, 0.96], rough: 0.06, level: 1.0 },
+  poppy: { cylinders: 7, exhaustHz: 70, brightness: 0.8, pattern: [1, 0.8, 1.1, 0.85, 1, 0.75, 1.05], rough: 0.14, level: 1.15 },
+  kestrel: { cylinders: 6, exhaustHz: 120, brightness: 1.15, pattern: [1, 0.95, 1, 0.97, 1, 0.95], rough: 0.05, level: 1.1 },
+  hummingbird: { cylinders: 12, exhaustHz: 340, brightness: 1.2, pattern: [1], rough: 0.02, level: 0.55 },
 };
 
 /** Car sounds: synthesized engine (AudioWorklet, oscillator fallback), intake, tyres, skids, wind; plus the mix buses. */
@@ -30,6 +37,7 @@ export class CarAudio {
   private engG!: GainNode; private engLp!: BiquadFilterNode; private intakeF!: BiquadFilterNode; private intakeG!: GainNode;
   private surfF!: BiquadFilterNode; private surfG!: GainNode;
   private skidF!: BiquadFilterNode; private skidG!: GainNode;
+  private rotorG!: GainNode; private rotorLfo!: OscillatorNode; private burnerG!: GainNode;
   private windG!: GainNode; private surfMod!: GainNode; private surfLp!: BiquadFilterNode; private flutter = 1;
   private load = 0;
   mix: AudioMix = { ...DEFAULT_MIX };
@@ -85,6 +93,40 @@ export class CarAudio {
     const windF = ctx.createBiquadFilter(); windF.type = 'lowpass'; windF.frequency.value = 500;
     this.windG = ctx.createGain(); this.windG.gain.value = 0;
     src().connect(windF).connect(this.windG).connect(this.buses.effects);
+    // Helicopter rotor: a low rumble pulsed at the blade-passing rate (the "whop"); balloon burner roar.
+    const rotorF = ctx.createBiquadFilter(); rotorF.type = 'lowpass'; rotorF.frequency.value = 170;
+    const rotorAm = ctx.createGain(); rotorAm.gain.value = 0.55;
+    this.rotorLfo = ctx.createOscillator(); this.rotorLfo.frequency.value = 13;
+    const lfoDepth = ctx.createGain(); lfoDepth.gain.value = 0.45; this.rotorLfo.connect(lfoDepth).connect(rotorAm.gain); this.rotorLfo.start();
+    this.rotorG = ctx.createGain(); this.rotorG.gain.value = 0;
+    src().connect(rotorF).connect(rotorAm).connect(this.rotorG).connect(this.buses.engine);
+    const burnF = ctx.createBiquadFilter(); burnF.type = 'bandpass'; burnF.frequency.value = 380; burnF.Q.value = 0.6;
+    this.burnerG = ctx.createGain(); this.burnerG.gain.value = 0;
+    src().connect(burnF).connect(this.burnerG).connect(this.buses.engine);
+  }
+
+  /** Aircraft sounds: engine (or turbine) and propeller, rotor whop, burner, wind over the airframe, wheels on the runway. */
+  updateAircraft(a: Aircraft, inside = false): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime, s = a.spec, voice = VOICES[s.id] ?? VOICES.wren;
+    const lever = s.kind === 'heli' ? a.collective : a.throttle;
+    this.load += (lever - this.load) * 0.15;
+    if (this.engine) {
+      if (this.voiceId !== s.id) { this.voiceId = s.id; this.engine.port.postMessage(voice); }
+      this.engine.parameters.get('rpm')!.setValueAtTime(s.kind === 'heli' ? 5200 + 500 * this.load : Math.max(600, a.rpm), t);
+      this.engine.parameters.get('load')!.setTargetAtTime(this.load, t, 0.05);
+    }
+    this.engG.gain.setTargetAtTime(s.kind === 'balloon' ? 0 : voice.level * (0.55 + 0.35 * this.load), t, 0.1);
+    this.engLp.frequency.setTargetAtTime(inside ? 1100 : 2600, t, 0.2);
+    this.intakeG.gain.setTargetAtTime(0, t, 0.1);
+    this.rotorG.gain.setTargetAtTime(s.kind === 'heli' ? 0.35 + 0.25 * this.load : 0, t, 0.1);
+    if (s.rotor) this.rotorLfo.frequency.setTargetAtTime((a.rpm / 60) * 2, t, 0.2);
+    this.burnerG.gain.setTargetAtTime(a.burner ? 0.5 : 0, t, 0.04);
+    const roll = a.onGround && !a.onWater ? Math.min(1, a.groundSpeed / 20) * 0.12 : 0;
+    this.surfF.frequency.setTargetAtTime(160, t, 0.1); this.surfG.gain.setTargetAtTime(roll, t, 0.1);
+    this.skidG.gain.setTargetAtTime(0, t, 0.1);
+    this.windG.gain.setTargetAtTime(Math.min(1, (a.airspeed / 55) ** 2) * (inside ? 0.18 : 0.38), t, 0.2);
   }
 
   /** Older browsers without AudioWorklet: the original two-oscillator engine. */
@@ -165,5 +207,6 @@ export class CarAudio {
     const hard = surf.particle === null || surf.name === 'Ice';
     this.skidG.gain.setTargetAtTime(hard ? Math.min(1, Math.max(0, skid - 2) / 6) * 0.12 : 0, t, 0.05);
     this.windG.gain.setTargetAtTime(Math.min(1, (speed / 45) ** 2) * (inside ? 0.12 : 0.3), t, 0.2);
+    this.rotorG.gain.setTargetAtTime(0, t, 0.1); this.burnerG.gain.setTargetAtTime(0, t, 0.05);
   }
 }
