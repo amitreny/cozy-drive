@@ -18,6 +18,7 @@ export interface VehicleSpec {
   mass: number;
   half: [number, number, number];          // chassis collider half extents
   comY: number;                            // centre-of-mass height offset (negative = lower)
+  comZ?: number;                           // centre-of-mass fore/aft offset (positive = towards the nose)
   inertiaScale: [number, number, number];
   mountY: number;                          // suspension mount height in chassis space
   restLength: number;                      // suspension length at full droop
@@ -59,19 +60,27 @@ const axle = (z: number, halfTrack: number, freq: number, steer: number, brake: 
   ({ z, halfTrack, freq, zeta: 0.38, antiRoll: 0.35, maxSteer: steer, brake, ...extra });
 
 /**
- * Fit a spec to a Kenney Car Kit model (docs/decisions/0003). Model units: ground at y=0, wheel radius 0.3,
- * wheels centred at x=±0.425. `s` scales the model uniformly to metres.
+ * Fit a spec to a detailed car model (see vehicle/detailedModel.ts and docs/decisions/0008). Measurements are in
+ * the model's own units: wheel centres (front/rear z, track centre x, mean half-track), mean tyre radius, body box,
+ * and the tyres' bottom (the ground). `wheelbase` is the real car's, in metres; it sets the scale. The collision box
+ * keeps the real ground `clearance` (bodies reach the ground with mud flaps and spoilers).
  */
-interface ModelFit { s: number; frontZ: number; rearZ: number; body: { x: number; y0: number; y1: number; z0: number; z1: number } }
+interface ModelFit {
+  wheelbase: number; clearance: number;
+  wheels: { fz: number; rz: number; cx: number; halfTrack: number; r: number };
+  body: { x: number; y1: number; z0: number; z1: number }; ground: number;
+}
 function fit(base: Omit<VehicleSpec, 'wheelRadius' | 'half' | 'mountY'> & { oldRadius: number }, m: ModelFit): VehicleSpec {
   const { oldRadius, ...rest } = base;
-  const r = 0.3 * m.s, groundOffset = ((m.body.y0 + m.body.y1) / 2) * m.s;
-  const spec = { ...rest, wheelRadius: r, mountY: 0, half: [m.body.x * m.s * 0.97, ((m.body.y1 - m.body.y0) / 2) * m.s * 0.97, ((m.body.z1 - m.body.z0) / 2) * m.s * 0.97] as [number, number, number] } as VehicleSpec;
-  spec.front = { ...spec.front, z: m.frontZ * m.s, halfTrack: 0.425 * m.s };
-  spec.rear = { ...spec.rear, z: m.rearZ * m.s, halfTrack: 0.425 * m.s };
+  const s = m.wheelbase / (m.wheels.fz - m.wheels.rz), r = m.wheels.r * s;
+  const cz = (m.body.z0 + m.body.z1) / 2;
+  const y0 = m.clearance, y1 = (m.body.y1 - m.ground) * s;
+  const spec = { ...rest, wheelRadius: r, mountY: 0, half: [m.body.x * s * 0.92, (y1 - y0) / 2 * 0.97, ((m.body.z1 - m.body.z0) / 2) * s * 0.96] as [number, number, number] } as VehicleSpec;
+  spec.front = { ...spec.front, z: (m.wheels.fz - cz) * s, halfTrack: m.wheels.halfTrack * s };
+  spec.rear = { ...spec.rear, z: (m.wheels.rz - cz) * s, halfTrack: m.wheels.halfTrack * s };
   spec.finalDrive = base.finalDrive * (r / oldRadius); // keep the same road speed per gear
-  // Put the mount where the resting ground sits at -groundOffset in chassis space.
-  spec.mountY = -groundOffset - restGroundY({ ...spec, mountY: 0 });
+  // Put the mount where the resting ground sits half a body-height below the collision box's centre.
+  spec.mountY = -(y0 + y1) / 2 - restGroundY({ ...spec, mountY: 0 });
   return spec;
 }
 
@@ -85,7 +94,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'FWD', frontSplit: 1, diffLock: 0, lockable: false,
     front: axle(0, 0, 1.7, 0.6, 3100, { antiRoll: 0.5 }), rear: axle(0, 0, 1.8, 0, 1700, { antiRoll: 0.45 }),
     drag: 0.48, wadingDepth: 0.35, sound: { cylinders: 4, tone: 1.0 }, approachDeg: 20,
-  }, { s: 1.4, frontZ: 0.81, rearZ: -0.81, body: { x: 0.65, y0: 0.15, y1: 1.1, z0: -1.45, z1: 1.4 } }),
+  }, { wheelbase: 2.4, clearance: 0.15, wheels: { fz: 5.473, rz: -5.04, cx: 0.231, halfTrack: 3.156, r: 1.315 }, body: { x: 4.05, y1: 5.633, z0: -9.302, z1: 9.308 }, ground: -0.172 }),
   badger: fit({
     id: 'badger', name: 'Badger · off-roader 4×4', mass: 1800, comY: -0.42, inertiaScale: [1.2, 1.5, 1.2], oldRadius: 0.42,
     restLength: 0.48, wheelWidth: 0.36, tyre: 'allTerrain', pressure: 2.0, baseGrip: 1.0,
@@ -94,7 +103,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'AWD', frontSplit: 0.5, diffLock: 0, lockable: true,
     front: axle(0, 0, 1.35, 0.58, 6500, { zeta: 0.42, antiRoll: 0.35 }), rear: axle(0, 0, 1.45, 0, 4500, { zeta: 0.42, antiRoll: 0.3 }),
     drag: 0.75, wadingDepth: 0.6, sound: { cylinders: 6, tone: 0.75 }, approachDeg: 42,
-  }, { s: 1.4, frontZ: 0.76, rearZ: -0.56, body: { x: 0.75, y0: 0.2, y1: 1.3, z0: -1.2, z1: 1.35 } }),
+  }, { wheelbase: 2.54, clearance: 0.26, wheels: { fz: 1.286, rz: -2.225, cx: -0.004, halfTrack: 1.012, r: 0.542 }, body: { x: 1.26, y1: 1.588, z0: -4.245, z1: 2.257 }, ground: -1.356 }),
   biscuit: fit({
     id: 'biscuit', name: 'Biscuit · camper van', mass: 2100, comY: -0.25, inertiaScale: [1.2, 1.4, 1.2], oldRadius: 0.36,
     restLength: 0.34, wheelWidth: 0.32, tyre: 'road', pressure: 2.2, baseGrip: 1.0,
@@ -103,16 +112,16 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'RWD', frontSplit: 0, diffLock: 0.2, lockable: false,
     front: axle(0, 0, 1.25, 0.55, 7000, { antiRoll: 0.55 }), rear: axle(0, 0, 1.35, 0, 5000, { antiRoll: 0.5 }),
     drag: 0.95, wadingDepth: 0.45, sound: { cylinders: 4, tone: 0.85 }, approachDeg: 20,
-  }, { s: 1.35, frontZ: 0.76, rearZ: -0.76, body: { x: 0.75, y0: 0.15, y1: 1.35, z0: -1.4, z1: 1.35 } }),
+  }, { wheelbase: 3.0, clearance: 0.18, wheels: { fz: 1.847, rz: -1.563, cx: 0, halfTrack: 1.209, r: 0.565 }, body: { x: 1.592, y1: 3.023, z0: -2.685, z1: 2.997 }, ground: -0.199 }),
   maple: fit({
-    id: 'maple', name: 'Maple · family sedan', mass: 1250, comY: -0.3, inertiaScale: [1.1, 1.4, 1.1], oldRadius: 0.32,
+    id: 'maple', name: 'Maple · family sedan', mass: 1250, comY: -0.3, comZ: 0.3, inertiaScale: [1.1, 1.4, 1.1], oldRadius: 0.32,
     restLength: 0.32, wheelWidth: 0.3, tyre: 'road', pressure: 2.1, baseGrip: 1.03,
     torqueCurve: [[800, 130], [2000, 165], [3500, 180], [4500, 172], [5500, 150], [6300, 125]], idleRpm: 800, maxRpm: 6400,
     gears: [3.5, 2.1, 1.45, 1.1, 0.85], reverse: 3.3, finalDrive: 4.0, lowRange: null,
     layout: 'FWD', frontSplit: 1, diffLock: 0, lockable: false,
     front: axle(0, 0, 1.5, 0.58, 3800, { antiRoll: 0.5 }), rear: axle(0, 0, 1.6, 0, 2200, { antiRoll: 0.45 }),
     drag: 0.5, wadingDepth: 0.35, sound: { cylinders: 4, tone: 0.95 }, approachDeg: 17,
-  }, { s: 1.4, frontZ: 0.66, rearZ: -0.66, body: { x: 0.75, y0: 0.15, y1: 1.3, z0: -1.3, z1: 1.25 } }),
+  }, { wheelbase: 2.64, clearance: 0.15, wheels: { fz: 2.398, rz: -1.171, cx: -0.009, halfTrack: 0.998, r: 0.405 }, body: { x: 1.356, y1: 1.506, z0: -2.86, z1: 3.491 }, ground: -0.345 }),
   bramble: fit({
     id: 'bramble', name: 'Bramble · pickup', mass: 1900, comY: -0.35, inertiaScale: [1.2, 1.5, 1.2], oldRadius: 0.42,
     restLength: 0.45, wheelWidth: 0.36, tyre: 'allTerrain', pressure: 2.0, baseGrip: 1.0,
@@ -121,7 +130,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'AWD', frontSplit: 0.4, diffLock: 0.2, lockable: true,
     front: axle(0, 0, 1.35, 0.55, 6800, { zeta: 0.42, antiRoll: 0.35 }), rear: axle(0, 0, 1.5, 0, 4800, { zeta: 0.42, antiRoll: 0.3 }),
     drag: 0.8, wadingDepth: 0.55, sound: { cylinders: 8, tone: 0.7 }, approachDeg: 32,
-  }, { s: 1.4, frontZ: 0.86, rearZ: -0.76, body: { x: 0.75, y0: 0.15, y1: 1.3, z0: -1.5, z1: 1.45 } }),
+  }, { wheelbase: 3.0, clearance: 0.24, wheels: { fz: 0.069, rz: -1.179, cx: 0.074, halfTrack: 0.286, r: 0.159 }, body: { x: 0.407, y1: 0.765, z0: -1.689, z1: 0.409 }, ground: 0.003 }),
   comet: fit({
     id: 'comet', name: 'Comet · sports coupe', mass: 1300, comY: -0.38, inertiaScale: [1.05, 1.25, 1.05], oldRadius: 0.33,
     restLength: 0.24, wheelWidth: 0.34, tyre: 'road', pressure: 2.2, baseGrip: 1.15,
@@ -130,15 +139,15 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'RWD', frontSplit: 0, diffLock: 0.45, lockable: false,
     front: axle(0, 0, 2.1, 0.55, 5200, { zeta: 0.45, antiRoll: 0.65 }), rear: axle(0, 0, 2.2, 0, 3600, { zeta: 0.45, antiRoll: 0.55 }),
     drag: 0.6, wadingDepth: 0.25, sound: { cylinders: 8, tone: 1.15 }, approachDeg: 13,
-  }, { s: 1.45, frontZ: 0.66, rearZ: -0.66, body: { x: 0.65, y0: 0.15, y1: 1.1, z0: -1.3, z1: 1.25 } }),
-  skipper: {
-    id: 'skipper', name: 'Skipper · dune buggy', mass: 650, half: [0.78, 0.35, 1.6], comY: -0.2, inertiaScale: [1.1, 1.3, 1.1],
-    mountY: 0.0, restLength: 0.52, wheelRadius: 0.36, wheelWidth: 0.28, tyre: 'allTerrain', pressure: 1.6, baseGrip: 1.0,
+  }, { wheelbase: 2.43, clearance: 0.12, wheels: { fz: 1.221, rz: -1.228, cx: 0, halfTrack: 0.748, r: 0.316 }, body: { x: 0.897, y1: 1.264, z0: -2.165, z1: 2.155 }, ground: -0.01 }),
+  skipper: fit({
+    id: 'skipper', name: 'Skipper · dune buggy', mass: 650, comY: -0.2, inertiaScale: [1.1, 1.3, 1.1], oldRadius: 0.36,
+    restLength: 0.52, wheelWidth: 0.28, tyre: 'allTerrain', pressure: 1.6, baseGrip: 1.0,
     torqueCurve: [[1000, 100], [3000, 135], [5000, 142], [6500, 122], [7500, 96]], idleRpm: 1000, maxRpm: 7800,
     gears: [3.0, 2.0, 1.45, 1.12, 0.9], reverse: 3.0, finalDrive: 4.2, lowRange: null,
     layout: 'RWD', frontSplit: 0, diffLock: 0.5, lockable: false,
-    front: axle(1.2, 0.8, 1.15, 0.6, 2800, { zeta: 0.45 }), rear: axle(-1.15, 0.82, 1.25, 0, 2200, { zeta: 0.45 }),
+    front: axle(0, 0, 1.15, 0.6, 2800, { zeta: 0.45 }), rear: axle(0, 0, 1.25, 0, 2200, { zeta: 0.45 }),
     drag: 0.42, wadingDepth: 0.35, sound: { cylinders: 2, tone: 1.3 }, approachDeg: 50,
     cabin: { y0: 0.95, y1: 1.75, z0: -0.95, z1: 0.25, hx: 0.62 },
-  },
+  }, { wheelbase: 2.1, clearance: 0.3, wheels: { fz: 1.271, rz: -0.783, cx: -0.006, halfTrack: 0.672, r: 0.293 }, body: { x: 0.94, y1: 0.845, z0: -2.037, z1: 1.525 }, ground: -0.554 }),
 };

@@ -13,7 +13,7 @@ import { Particles } from './fx/particles';
 import { Garage } from './ui/garage';
 import { Hud } from './ui/hud';
 import { CarVisual } from './vehicle/carVisual';
-import { loadCarModels } from './vehicle/modelLibrary';
+import { loadDetailedModels } from './vehicle/detailedModel';
 import { Vehicle, type AssistLevel, type DriveInput } from './vehicle/vehicle';
 import { buildPropMeshes, NearShadowCasters, updatePropVisibility, wind } from './world/props';
 import { PostFX } from './render/postfx';
@@ -55,7 +55,7 @@ const HANDS_OFF = { pitch: 0, roll: 0, yaw: 0, lift: 0, brake: 1 };
 
 async function boot(): Promise<void> {
   const loading = document.getElementById('loading')!;
-  await Promise.all([RAPIER.init(), loadCarModels().catch((e) => console.warn('Car models unavailable, using built-in shapes', e)), loadTownModels().catch((e) => console.warn('Town models unavailable', e))]);
+  await Promise.all([RAPIER.init(), loadDetailedModels().catch((e) => console.warn('Car models unavailable, using built-in shapes', e)), loadTownModels().catch((e) => console.warn('Town models unavailable', e))]);
   const { world, scatter } = await loadWorld(7, (stage) => { loading.textContent = stage; });
   loading.textContent = 'Warming up the engine…';
   const physics = new RAPIER.World({ x: 0, y: -9.81, z: 0 });

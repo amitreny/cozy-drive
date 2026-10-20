@@ -77,7 +77,7 @@ body.titled .minimap { opacity: 0; }
 .settings h3 { margin: 12px 0 0; font-size: 15px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }
 .hangar .aircraft-card { margin: 10px 0; padding: 8px 10px; border-radius: 12px; background: #f6ecda; }
 .hangar .aircraft-card button { margin-top: 6px; }
-.hangar .credit { font-size: 10px; opacity: 0.6; margin-top: 4px; }
+.hangar .credit, .garage .credit { font-size: 10px; opacity: 0.6; margin-top: 4px; }
 .garage .hint, .hangar .hint { font-size: 12px; opacity: 0.8; }
 .jobboard .job, .hangar .job { margin: 8px 0; padding: 7px 9px; border-radius: 10px; background: #f6ecda; }
 .jobboard .job button, .hangar .job button { margin-top: 5px; }

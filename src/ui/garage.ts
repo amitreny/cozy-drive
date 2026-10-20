@@ -1,5 +1,6 @@
 import { allowed, COZY_SWATCHES, defaultBuild, FINISHES, resolveSpec, stats, WHEEL_NAMES, type Build } from '../customization/build';
 import { costOf, missing, PRICES } from '../gameplay/economy';
+import { DETAILED } from '../vehicle/detailedModel';
 import { CAR_TYPES } from '../vehicle/spec';
 import type { AssistLevel } from '../vehicle/vehicle';
 import { TYRE_NAMES } from '../world/surfaces';
@@ -104,6 +105,7 @@ export class Garage {
     this.panel.innerHTML = `
       <div class="garage-head"><h2>Garage</h2><span class="acorns">🌰 ${this.shop.creative() ? '∞' : acorns}</span></div>
       <label>Car</label>${row('carType', Object.keys(CAR_TYPES), (k) => CAR_TYPES[k].name.split(' · ')[0])}
+      ${DETAILED[b.carType] ? `<div class="credit">Model: ${DETAILED[b.carType].credit} (CC BY 3.0)</div>` : ''}
       <label>Tyres</label>${row('tyre', ok.tyres, (t) => TYRE_NAMES[t])}
       ${ok.wheels.length ? `<label>Wheels</label>${row('wheels', ok.wheels, (w) => WHEEL_NAMES[w])}` : ''}
       <label>Suspension</label>${row('lift', ok.lifts, (l) => (l === 0 ? 'Stock' : `Lift ${l}`))}

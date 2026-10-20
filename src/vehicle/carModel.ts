@@ -6,20 +6,21 @@ export { paintMaterial };
 import { BODIES } from './bodyDefs';
 import { buildBody } from './carBody';
 import { buildWheel, type RimStyle } from './carParts';
-import { buildKenneyModel } from "./kenneyModel";
-import { hasModel } from "./modelLibrary";
+import { buildDetailedModel, hasDetailed } from './detailedModel';
 import { CAR_TYPES, restGroundY, type VehicleSpec } from './spec';
 
 export interface CarModel {
   root: THREE.Group; body: THREE.Group; wheels: THREE.Group[]; headlights: THREE.MeshStandardMaterial[];
   reflective: THREE.MeshStandardMaterial[]; dispose(): void;
+  /** Where each wheel sits across the car (defaults to the physics track). */
+  wheelX?: number[];
 }
 
 const RIMS: Record<string, RimStyle> = { pip: 'alloy5', badger: 'offroad6', biscuit: 'steel', skipper: 'beadlock' };
 
 /** A car built from its body profile: shaped panels, glass, interior, lights, trim and real wheels. */
 export function buildCarModel(spec: VehicleSpec, build: Build): CarModel {
-  if (hasModel(spec.id)) return buildKenneyModel(spec, build);
+  if (hasDetailed(spec.id)) return buildDetailedModel(spec, build);
   const def = BODIES[spec.id], stock = CAR_TYPES[spec.id] ?? spec;
   const root = new THREE.Group(), body = new THREE.Group(), shell = new THREE.Group();
   root.add(body); body.add(shell);

@@ -55,7 +55,7 @@ export class CarVisual {
 
     v.wheels.forEach((w, i) => {
       const g = this.model.wheels[i];
-      g.position.set(w.local.x, w.local.y - w.length - (w.contact ? w.sink : 0), w.local.z);
+      g.position.set(this.model.wheelX?.[i] ?? w.local.x, w.local.y - w.length - (w.contact ? w.sink : 0), w.local.z);
       g.rotation.y = -w.steer;
       g.children[0].rotation.x = w.spin;
     });

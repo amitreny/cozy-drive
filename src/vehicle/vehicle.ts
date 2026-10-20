@@ -87,7 +87,7 @@ export class Vehicle {
     const [hx, hy, hz] = spec.half, m = spec.mass, [ix, iy, iz] = spec.inertiaScale;
     const inertia = { x: (m / 3) * (hy * hy + hz * hz) * ix, y: (m / 3) * (hx * hx + hz * hz) * iy, z: (m / 3) * (hx * hx + hy * hy) * iz };
     const cd = this.bodyHull(spec)
-      .setMassProperties(m, { x: 0, y: spec.comY, z: 0 }, inertia, { x: 0, y: 0, z: 0, w: 1 })
+      .setMassProperties(m, { x: 0, y: spec.comY, z: spec.comZ ?? 0 }, inertia, { x: 0, y: 0, z: 0, w: 1 })
       .setFriction(0.35).setRestitution(0.05);
     this.collider = this.world.createCollider(cd, this.body);
     for (const c of this.extraColliders) this.world.removeCollider(c, false);

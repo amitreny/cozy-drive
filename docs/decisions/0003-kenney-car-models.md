@@ -1,6 +1,6 @@
 # 0003 · Car bodies from the CC0 Kenney Car Kit
 
-**Status:** accepted
+**Status:** superseded by [0008](0008-detailed-car-models.md)
 
 **Context.** Procedural car bodies (0002-era `carBody.ts`) looked like stacks of shapes. Commissioned models are planned for later, but a better look was wanted now.
 
