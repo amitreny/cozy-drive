@@ -27,3 +27,51 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #20262e; fon
 .stats .bar span { width: 64px; }
 .stats .bar i { flex: 1; height: 6px; border-radius: 3px; background: rgba(58,49,41,0.12); position: relative; overflow: hidden; }
 .stats .bar i > b { position: absolute; inset: 0 auto 0 0; background: #7fa37a; }
+.garage-head { display: flex; align-items: baseline; justify-content: space-between; }
+.acorns { font-weight: 700; font-size: 16px; }
+.garage small { opacity: 0.75; font-size: 11px; margin-left: 3px; }
+.garage button.on small { opacity: 0.9; }
+.garage button:disabled { opacity: 0.45; cursor: not-allowed; }
+.shopbar { margin-top: 10px; padding: 8px 10px; border-radius: 12px; background: #f6e7cf; }
+.shopbar .short { color: #a0522d; font-size: 12px; }
+.hud-acorns { position: absolute; right: 18px; top: 18px; font-size: 18px; font-weight: 700; }
+.toasts { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast { background: var(--soft); border-radius: 14px; padding: 8px 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); font-size: 15px; animation: toastIn 0.4s ease-out, toastOut 0.6s ease-in 3.4s forwards; }
+.toast b { color: var(--accent); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-6px); } }
+.mapview { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; gap: 18px; background: rgba(32, 38, 46, 0.55); pointer-events: auto; }
+.mapview canvas { width: min(84vh, 62vw); height: min(84vh, 62vw); border-radius: 18px; box-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+.mapside { width: 260px; max-height: 84vh; overflow-y: auto; font-size: 14px; }
+.mapside h2 { margin: 2px 0 8px; }
+.mapside .hint { opacity: 0.7; font-size: 12px; }
+.postcards { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.postcards figure { margin: 0; background: #fff; padding: 5px 5px 2px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); transform: rotate(-1deg); }
+.postcards figure:nth-child(even) { transform: rotate(1.2deg); }
+.postcards img { width: 100%; display: block; border-radius: 3px; }
+.postcards figcaption { font-size: 12px; text-align: center; padding: 3px 0; }
+.title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 14vh; pointer-events: auto; cursor: pointer;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(20,16,12,0.45) 100%); transition: opacity 1.2s ease; color: #fff8ec; text-shadow: 0 2px 18px rgba(0,0,0,0.45); }
+.title h1 { font-size: clamp(42px, 8vw, 92px); margin: 0; letter-spacing: 0.02em; font-weight: 700; }
+.title p { margin: 8px 0 0; font-size: clamp(15px, 2vw, 20px); opacity: 0.92; }
+.title .start { margin-top: 34px; font-size: 16px; padding: 10px 22px; border-radius: 999px; background: rgba(255, 248, 236, 0.18); border: 1px solid rgba(255, 248, 236, 0.5); animation: breathe 2.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+.title.gone { opacity: 0; pointer-events: none; }
+body.titled #ui > .panel { opacity: 0; }
+#ui > .panel { transition: opacity 1s ease; }
+.settings { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 360px; pointer-events: auto; display: none; font-size: 14px; }
+.settings h2 { margin: 2px 0 6px; }
+.settings label { display: block; margin: 10px 0 2px; font-weight: 700; }
+.settings label small { font-weight: 400; opacity: 0.65; }
+.settings .slider { display: flex; align-items: center; gap: 10px; }
+.settings .slider input { flex: 1; accent-color: var(--accent); }
+.settings .slider span { width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+.settings .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.settings button { border: 0; border-radius: 10px; padding: 6px 10px; background: #efe2cc; cursor: pointer; font: inherit; }
+.settings button.on { background: var(--accent); color: #fff; }
+.settings .hint { opacity: 0.65; font-size: 12px; margin: 10px 0 0; }
+.minimap { position: absolute; left: 18px; top: 18px; width: 180px; height: 180px; border-radius: 50%; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+body.has-minimap .help { top: 212px; }
+body.titled .minimap { opacity: 0; }
+.minimap { transition: opacity 1s ease; }
+.settings h3 { margin: 12px 0 0; font-size: 15px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }

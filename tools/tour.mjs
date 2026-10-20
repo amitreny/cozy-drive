@@ -31,6 +31,9 @@ const spots = [
   { name: 'mountain-pass', road: 3, i: 250, hours: 10 },
   { name: 'canyon', road: 4, i: 200, hours: 16 },
   { name: 'dunes', road: 5, i: 200, hours: 12 },
+  { name: 'lake', road: 8, i: 120, hours: 15 },
+  { name: 'coast-sea', road: 0, i: 330, hours: 10.5 },
+  { name: 'night-highway', road: 0, i: 1500, hours: 22 },
 ];
 for (const s of spots) {
   await go(s);

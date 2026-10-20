@@ -15,6 +15,7 @@ await page.evaluate((h) => { window.__game.sky.hours = h; }, hours);
 await page.keyboard.press('KeyH');
 await page.waitForTimeout(2500);
 await page.keyboard.press('KeyG');
+await page.click('button[data-creative]');
 for (const car of ['pip', 'badger', 'biscuit', 'maple', 'bramble', 'comet', 'skipper']) {
   await page.click(`button[data-k="carType"][data-v="${car}"]`);
   await page.waitForTimeout(2500);

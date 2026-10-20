@@ -53,3 +53,27 @@ it('the coastal highway is smooth enough to cruise on', () => {
   expect(car.speed * 3.6).toBeGreaterThan(60);
   expect(car.wheels.filter((wh) => wh.contact).length).toBeGreaterThanOrEqual(3);
 }, 60000);
+
+it('autopilot cruises the coastal highway, staying in its lane', async () => {
+  const { Autopilot } = await import('../src/gameplay/autopilot');
+  const r = w.roads.find((x) => x.def.name === 'Coastal Highway')!;
+  const i = 40, yaw = Math.atan2(r.xs[i + 1] - r.xs[i], r.zs[i + 1] - r.zs[i]);
+  const { car, tp } = drive('maple', r.xs[i], r.zs[i], yaw);
+  const world = (car as unknown as { world: R.World }).world;
+  const ap = new Autopilot();
+  for (let s = 0; s < 1 / DT; s++) { car.step(DT, { throttle: 0, brake: 0, steer: 0, handbrake: 0 }); world.step(); car.capture(); }
+  expect(ap.engage(w.roads, car.body.translation().x, car.body.translation().z, car.yaw)).toBe(true);
+  let worst = 0, dist = 0, last = car.body.translation();
+  for (let s = 0; s < 60 / DT; s++) {
+    const p = car.body.translation();
+    const ctl = ap.control(p.x, p.z, car.yaw, car.speed)!;
+    car.step(DT, ctl); world.step(); car.capture();
+    if (s % 30 === 0) tp.update(p.x, p.z);
+    if (s > 3 / DT) { let d = Infinity; for (let k = 0; k < r.xs.length; k += 2) d = Math.min(d, Math.hypot(r.xs[k] - p.x, r.zs[k] - p.z)); worst = Math.max(worst, d); }
+    dist += Math.hypot(p.x - last.x, p.z - last.z); last = { ...p };
+  }
+  console.log('autopilot: 60 s, distance', dist.toFixed(0), 'm, worst offset', worst.toFixed(1), 'm');
+  expect(ap.active).toBe(true);
+  expect(dist).toBeGreaterThan(900);
+  expect(worst).toBeLessThan(4.5);
+}, 120000);

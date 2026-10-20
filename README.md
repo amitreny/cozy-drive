@@ -27,7 +27,7 @@ npm run smoke      # builds, opens the game in installed Chrome, drives, checks 
 ```
 
 For realistic frame rates in the smoke test on a machine with a GPU: `SMOKE_GPU=1 node tools/smoke.mjs <screenshot-dir>`.
-To screenshot a tour of the island: `node tools/tour.mjs <screenshot-dir>`. To measure frame rate per layer: `node tools/perf.mjs`. To measure driving smoothness: `node tools/smoothness.mjs` (add `THROTTLE=4` to emulate a slow CPU).
+To screenshot a tour of the island: `node tools/tour.mjs <screenshot-dir>`. To measure frame rate per layer: `node tools/perf.mjs`. To check the synthesized engines (levels, pitch, clipping) and save rev-sweep WAVs: `node tools/engine-check.mjs <dir>`. To measure driving smoothness: `node tools/smoothness.mjs` (add `THROTTLE=4` to emulate a slow CPU).
 To screenshot every car type in the garage: `npm run build && node tools/cars.mjs <screenshot-dir> [hour]`.
 
 ## Controls
@@ -43,7 +43,12 @@ To screenshot every car type in the garage: `npm run build && node tools/cars.mj
 | Tyre pressure down / up | [ / ] | Bumpers |
 | Low range (4×4) / diff lockers | F / L | X / – |
 | Cruise control (brake cancels) | K | D-pad up |
-| Help, mute | H, M | Back |
+| Map | M | D-pad down |
+| Mini map on/off (style in Settings) | Tab | – |
+| Autopilot (steer or brake to take over) | P | D-pad left |
+| Radio station | T | D-pad right |
+| Settings (sound mix, radio, mini map) | Esc | – |
+| Help, mute | H, N | Back |
 
 ## What's in the prototype
 
@@ -52,6 +57,8 @@ To screenshot every car type in the garage: `npm run build && node tools/cars.mj
 - **7 car types:** hatchback, 4×4 (low range, lockers), camper van, sedan, pickup, sports coupe and dune buggy. Five use CC0 models from Kenney's Car Kit, see [CREDITS.md](CREDITS.md).
 - **Garage:** car type, 6 tyre types, 4 wheel styles, lift, engine stage, differential, snorkel, paint and accent colours, 5 finishes, driving assists, with live stat bars.
 - **Physics:** custom ray-cast vehicle on Rapier at 120 Hz, verified by automated acceptance tests.
+- **Things to do:** 60 garden gnomes to find, 9 scenic viewpoints with postcards (one is an off-road summit), Acorns to spend in the garage, a map that reveals as you explore, and an autopilot for lazy coastal cruises.
+- **Atmosphere:** bloom and warm grading, drifting clouds, stars, shoreline foam, swaying meadow grass with wildflowers, a generative radio and nature sounds. Quality adapts to your GPU.
 - **Cozy systems:** day/night cycle, gentle rescue from deep water, flip-back, autosave to IndexedDB, offline play after the first visit.
 
 ## Layout

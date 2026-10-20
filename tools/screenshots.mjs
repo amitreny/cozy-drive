@@ -13,6 +13,8 @@ page.on('pageerror', (e) => errors.push(e.message));
 await page.goto('http://localhost:4184/');
 await page.waitForFunction(() => window.__game, null, { timeout: 90000 });
 await page.keyboard.press('KeyH');
+// Creative mode so every car and part can be shown.
+await page.keyboard.press('KeyG'); await page.click('button[data-creative]'); await page.click('button[data-close]');
 
 /** Pick a car type and paint through the real garage UI. */
 async function car(type, paint, finish = 'gloss') {

@@ -25,6 +25,7 @@ await page.keyboard.down('KeyD'); await page.waitForTimeout(1200); await page.ke
 await page.screenshot({ path: `${out}/2-driving.png` });
 await page.keyboard.up('KeyW');
 await page.keyboard.press('KeyG'); await page.waitForTimeout(800);
+await page.click('button[data-creative]');
 await page.screenshot({ path: `${out}/3-garage.png` });
 await page.click('button[data-k="carType"][data-v="badger"]'); await page.waitForTimeout(600);
 await page.click('button[data-k="paint"][data-v="#6c9bc4"]'); await page.click('button[data-k="lift"][data-v="2"]'); await page.waitForTimeout(600);

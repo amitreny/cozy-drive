@@ -1,6 +1,9 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { CarAudio } from './audio/audio';
+import { CarAudio, DEFAULT_MIX, VOICES, type AudioMix } from './audio/audio';
+import { SettingsPanel } from './ui/settings';
+import { Ambience } from './audio/ambience';
+import { Radio } from './audio/music';
 import { ChaseCamera } from './camera/chase';
 import { Input } from './core/input';
 import { FixedLoop } from './core/loop';
@@ -12,18 +15,28 @@ import { Hud } from './ui/hud';
 import { CarVisual } from './vehicle/carVisual';
 import { loadCarModels } from './vehicle/modelLibrary';
 import { Vehicle, type AssistLevel, type DriveInput } from './vehicle/vehicle';
-import { buildPropMeshes, NearShadowCasters, updatePropVisibility } from './world/props';
+import { buildPropMeshes, NearShadowCasters, updatePropVisibility, wind } from './world/props';
+import { PostFX } from './render/postfx';
+import { Autopilot } from './gameplay/autopilot';
+import { Discoveries } from './gameplay/discoveries';
+import { REWARDS, unlocksUsed } from './gameplay/economy';
+import { placeGnomes, placeViewpoints, type Viewpoint } from './gameplay/places';
+import { Progress, type ProgressData } from './gameplay/progress';
+import { MAP_FOG_VERSION, MapView } from './ui/map';
+import { MiniMap } from './ui/minimap';
+import { Grass } from './world/grass';
+import { Water } from './world/water';
 import { SkyEnvironment } from './world/environment';
 import { Sky } from './world/sky';
 import { S, SURFACES } from './world/surfaces';
-import { buildRoads, buildWater } from './world/terrain';
+import { buildRoads } from './world/terrain';
 import { heightAt, isDry, surfaceAt, waterLevelAt, WORLD_VERSION } from './world/terrainGen';
 import { TerrainPhysics } from './world/terrainPhysics';
 import { TerrainRenderer } from './world/terrainRender';
 import { loadWorld } from './world/worldLoader';
 import { buildVillage } from './world/village';
 
-interface SaveData { version: 1; worldVersion?: number; build: Build; assists: AssistLevel; pos: { x: number; z: number; yaw: number }; hours: number }
+interface SaveData { version: 1; worldVersion?: number; build: Build; assists: AssistLevel; pos: { x: number; z: number; yaw: number }; hours: number; progress?: ProgressData; fog?: string; mix?: AudioMix; station?: number; muted?: boolean; minimap?: boolean; minimapRotate?: boolean; fogVersion?: number }
 const SAVE_KEY = 'save-v1';
 const IDLE: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0 };
 
@@ -52,13 +65,20 @@ async function boot(): Promise<void> {
   const terrain = new TerrainRenderer(world);
   const props = buildPropMeshes(scatter, world.size), casters = new NearShadowCasters(scatter);
   scene.add(casters.group);
-  scene.add(terrain.group, buildRoads(world), buildWater(world), props, buildVillage(RAPIER, physics, world));
+  const water = new Water(world, terrain.heightTex), grass = new Grass(world, terrain.heightTex, terrain.surfTex);
+  scene.add(terrain.group, buildRoads(world), water.group, grass.mesh, props, buildVillage(RAPIER, physics, world));
+  const postfx = new PostFX(renderer, scene, camera);
   const particles = new Particles(2500);
   scene.add(particles.points);
   const headlight = new THREE.SpotLight(0xffe7b8, 0, 70, 0.55, 0.6, 1.2);
   scene.add(headlight, headlight.target);
   const saved = await load<SaveData>(SAVE_KEY);
   let build: Build = saved?.build ? sanitize(saved.build) : defaultBuild('pip');
+  const progress = new Progress(saved?.progress);
+  unlocksUsed(build).forEach((k) => progress.owned.add(k)); // older saves keep whatever their car already had
+  const gnomes = placeGnomes(world), viewpoints = placeViewpoints(world);
+  const discoveries = new Discoveries(gnomes, viewpoints, progress.found);
+  scene.add(discoveries.group);
   let assists: AssistLevel = saved?.assists ?? 'relaxed';
   if (saved?.hours !== undefined) sky.hours = saved.hours;
   let safe = saved?.pos && saved.worldVersion === WORLD_VERSION ? saved.pos : { ...world.spawn };
@@ -75,12 +95,36 @@ async function boot(): Promise<void> {
   const hud = new Hud(ui);
   const audio = new CarAudio();
   const input = new Input();
-  input.onFirstGesture = () => { audio.start(); void requestPersistence(); };
+  let radio: Radio | null = null, ambience: Ambience | null = null;
+  audio.setMix({ ...DEFAULT_MIX, ...saved?.mix });
+  audio.muted = saved?.muted ?? false;
+  audio.onReady = (ctx, music, amb) => {
+    radio = new Radio(ctx, music);
+    if (saved?.station !== undefined) radio.setStation(saved.station);
+    radio.start();
+    ambience = new Ambience(ctx, amb);
+    if (radio.on) hud.toast(`♪ Now playing: <b>${radio.name}</b> · T to tune · Esc for sound settings`);
+  };
+  // Title screen: the camera circles the parked car until the first key or click.
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.innerHTML = `<h1>Cozy Drive</h1><p>a slow drive around a little island</p><div class="start">${saved ? 'Press any key to continue' : 'Press any key to start'}</div>`;
+  document.body.appendChild(title); document.body.classList.add('titled');
+  let titled = true;
+  chase.turntable = true;
+  if (saved) hud.toggleHelp(); // returning players already know the keys
+  const closeTitle = () => {
+    if (!titled) return;
+    titled = false; title.classList.add('gone'); document.body.classList.remove('titled');
+    chase.turntable = false; setTimeout(() => title.remove(), 1300);
+  };
+  title.addEventListener('pointerdown', closeTitle);
+  input.onFirstGesture = () => { audio.start(); void requestPersistence(); closeTitle(); };
   const fade = document.createElement('div');
   fade.style.cssText = 'position:fixed;inset:0;background:#20262e;opacity:0;transition:opacity .5s;pointer-events:none';
   document.body.appendChild(fade);
 
-  const persist = () => void save(SAVE_KEY, { version: 1, worldVersion: WORLD_VERSION, build, assists, pos: safe, hours: sky.hours } satisfies SaveData);
+  const persist = () => void save(SAVE_KEY, { version: 1, worldVersion: WORLD_VERSION, build, assists, pos: safe, hours: sky.hours, progress: progress.toJSON(), fog: mapView.fogData(), mix: audio.mix, station: radio?.current ?? saved?.station, muted: audio.muted, minimap: minimap.visible, minimapRotate: minimap.rotate, fogVersion: MAP_FOG_VERSION } satisfies SaveData);
   const applyBuild = (b: Build) => {
     const typeChanged = b.carType !== build.carType;
     build = b; spec = resolveSpec(b);
@@ -89,8 +133,81 @@ async function boot(): Promise<void> {
     visual.rebuild(spec, b);
     persist();
   };
-  const loop = new FixedLoop({ fixedUpdate, update, render: () => renderer.render(scene, camera) });
-  const garage = new Garage(ui, applyBuild, (a) => { assists = a; vehicle.assists = a; persist(); }, () => toggleGarage(false));
+  // Dynamic resolution: keep frames smooth on weaker GPUs by trading a little sharpness.
+  const maxRatio = Math.min(devicePixelRatio, 1.5);
+  let pixelRatio = maxRatio, frameAvg = 16.7, lastFrame = performance.now(), resCheck = 0;
+  const setRatio = (r: number) => {
+    pixelRatio = r; renderer.setPixelRatio(r); renderer.setSize(innerWidth, innerHeight);
+    const sz = renderer.getDrawingBufferSize(new THREE.Vector2()); postfx.setSize(sz.x, sz.y);
+  };
+  /** Quality tier: 2 = bloom + grass, 1 = grass only, 0 = neither. */
+  let tier = 2, tierCooldown = 0;
+  const setTier = (t: number) => { tier = t; postfx.quality = t >= 2 ? 'high' : 'medium'; grass.mesh.visible = t >= 1; };
+  const render = () => {
+    const now = performance.now();
+    frameAvg += (now - lastFrame - frameAvg) * 0.05; lastFrame = now;
+    if (++resCheck > 90) {
+      resCheck = 0;
+      // Slow: first lower resolution a little, then drop bloom, then grass. Fast: restore in reverse,
+      // with a cool-down after any downgrade so quality never flickers.
+      if (frameAvg > 21) {
+        if (pixelRatio > 0.75) setRatio(Math.max(0.75, pixelRatio - 0.1));
+        else if (tier > 0) { setTier(tier - 1); tierCooldown = now + 30000; }
+        else if (pixelRatio > 0.6) setRatio(Math.max(0.6, pixelRatio - 0.05));
+      } else if (frameAvg < 14.5) {
+        if (pixelRatio < Math.min(maxRatio, 0.75) - 0.01 || (tier === 2 && pixelRatio < maxRatio)) setRatio(Math.min(maxRatio, pixelRatio + 0.1));
+        else if (tier < 2 && now > tierCooldown) setTier(tier + 1);
+        else if (pixelRatio < maxRatio) setRatio(Math.min(maxRatio, pixelRatio + 0.1));
+      }
+    }
+    postfx.render(scene, camera);
+    const pc = pendingPostcards.shift();
+    if (pc) capturePostcard(pc);
+  };
+  // Postcards: a small JPEG of the frame just rendered, kept in the scrapbook.
+  const pendingPostcards: Viewpoint[] = [];
+  const postcardCam = new THREE.PerspectiveCamera(50, 16 / 9, 0.5, 7000);
+  const capturePostcard = (v: Viewpoint) => {
+    // Frame the vista itself from a little above the marker, then put the normal frame back next tick.
+    const sx = Math.sin(v.yaw), sz = Math.cos(v.yaw);
+    postcardCam.aspect = renderer.domElement.width / renderer.domElement.height; postcardCam.updateProjectionMatrix();
+    postcardCam.position.set(v.x + sx * 4, v.y + 5, v.z + sz * 4); // just past the marker, so the car is behind us
+    postcardCam.lookAt(v.x + sx * 300, v.y - 25, v.z + sz * 300);
+    postfx.render(scene, postcardCam);
+    const c = document.createElement('canvas'); c.width = 320; c.height = 180;
+    const src = renderer.domElement, ar = 16 / 9, sw = Math.min(src.width, src.height * ar), sh = sw / ar;
+    c.getContext('2d')!.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, 320, 180);
+    progress.postcards.push({ id: v.id, name: v.name, img: c.toDataURL('image/jpeg', 0.78) });
+    postfx.render(scene, camera);
+    flash.style.transition = 'none'; flash.style.opacity = '0.85';
+    requestAnimationFrame(() => { flash.style.transition = 'opacity 0.7s'; flash.style.opacity = '0'; });
+    persist();
+  };
+  const loop = new FixedLoop({ fixedUpdate, update, render });
+  const shop = {
+    acorns: () => progress.acorns, owned: () => progress.owned, creative: () => progress.creative,
+    setCreative: (on: boolean) => { progress.creative = on; persist(); },
+    buy: (keys: string[], cost: number) => { const ok = progress.buy(keys, cost); if (ok) persist(); return ok; },
+  };
+  const mapView = new MapView(ui, world, viewpoints, gnomes, progress, saved?.worldVersion === WORLD_VERSION ? saved?.fog : undefined, saved?.fogVersion !== MAP_FOG_VERSION);
+  if (!saved?.fog || saved.worldVersion !== WORLD_VERSION) mapView.reveal(world.spawn.x, world.spawn.z, 420); // the village is home: start with it on the map
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none';
+  document.body.appendChild(flash);
+  const autopilot = new Autopilot();
+  mapView.baseCanvas(); // paint now, behind the loading screen, so neither map ever hitches
+  const minimap = new MiniMap(ui, mapView, world, viewpoints, progress);
+  minimap.rotate = saved?.minimapRotate ?? true;
+  minimap.setVisible(saved?.minimap ?? true);
+  const settings = new SettingsPanel(ui, {
+    mix: () => audio.mix, setMix: (m) => audio.setMix(m),
+    stations: () => radio?.stations ?? ['Morning Meadow', 'Evening Drive', 'Night Sky'],
+    station: () => radio?.current ?? saved?.station ?? 0, setStation: (i) => radio?.setStation(i),
+    muted: () => audio.muted, setMuted: (m) => audio.setMuted(m),
+    minimap: () => ({ visible: minimap.visible, rotate: minimap.rotate }),
+    setMinimap: (v, r) => { minimap.setVisible(v); minimap.rotate = r; },
+  }, () => { settings.toggle(); loop.timeScale = 1; persist(); });
+  const garage = new Garage(ui, shop, applyBuild, (a) => { assists = a; vehicle.assists = a; persist(); }, () => toggleGarage(false));
   function toggleGarage(open: boolean): void {
     if (open) { garage.show(build, assists); loop.timeScale = 0; chase.turntable = true; }
     else { garage.hide(); loop.timeScale = 1; chase.turntable = false; (document.activeElement as HTMLElement | null)?.blur(); }
@@ -121,15 +238,43 @@ async function boot(): Promise<void> {
         ctl = { ...ctl, throttle: Math.max(ctl.throttle, Math.min(1, Math.max(0, err * 0.3 + cruise.i))) };
       }
     }
-    vehicle.step(dt, garage.open || rescuing ? IDLE : ctl);
+    if (autopilot.active) {
+      const raw = input.controls;
+      if (Math.abs(raw.steer) > 0.35 || raw.brake > 0.1 || raw.handbrake > 0.5) { autopilot.disengage(); hud.toast('Autopilot off: you have the wheel'); }
+      else {
+        const p = vehicle.body.translation();
+        const ap = autopilot.control(p.x, p.z, vehicle.yaw, vehicle.speed, cruise.on ? cruise.target : undefined);
+        if (ap) ctl = { ...ap, throttle: Math.max(ap.throttle, raw.throttle) }; else hud.toast('Autopilot: end of the road');
+      }
+    }
+    vehicle.step(dt, garage.open || rescuing || titled ? IDLE : ctl);
     physics.step();
     vehicle.capture();
   }
 
-  let safeTimer = 0, saveTimer = 0;
+  let safeTimer = 0, saveTimer = 0, mapTimer = 0, revealTimer = 0, ambTimer = 0;
+  let amb = { day: 1, night: 0, shore: 0, nature: 1 };
   const emitAcc = new Float32Array(4);
   function update(dt: number, alpha: number): void {
-    if (input.consume('garage')) toggleGarage(!garage.open);
+    if (input.consume('garage') && !mapView.open) toggleGarage(!garage.open);
+    if (input.consume('map') && !garage.open) { mapView.toggle(); loop.timeScale = mapView.open ? 0 : 1; mapTimer = 1; }
+    if (mapView.open) { mapTimer += dt; if (mapTimer > 0.1) { mapTimer = 0; const p = vehicle.body.translation(); mapView.draw(p.x, p.z, vehicle.yaw); } }
+    if (input.consume('autopilot')) {
+      if (autopilot.active) { autopilot.disengage(); hud.toast('Autopilot off'); }
+      else { const p = vehicle.body.translation(); hud.toast(autopilot.engage(world.roads, p.x, p.z, vehicle.yaw) ? `Autopilot on · <b>${autopilot.road!.def.name}</b> · sit back and enjoy` : 'Autopilot needs a road nearby'); }
+    }
+    revealTimer += dt;
+    if (revealTimer > 0.5) { revealTimer = 0; const p = vehicle.body.translation(); mapView.reveal(p.x, p.z, 170); }
+    discoveries.update(dt, visual.position, vehicle.speed, (g) => {
+      progress.found.add(g.id); progress.earn(REWARDS.gnome); audio.chime();
+      const n = gnomes.filter((x) => progress.found.has(x.id)).length;
+      hud.toast(`Found a garden gnome! <b>${n} / ${gnomes.length}</b> · +${REWARDS.gnome} 🌰`); persist();
+    }, (v) => {
+      progress.found.add(v.id); progress.earn(REWARDS.viewpoint); audio.chime(true);
+      mapView.reveal(v.x, v.z, 650); pendingPostcards.push(v);
+      hud.toast(`★ <b>${v.name}</b> · postcard added to your map · +${REWARDS.viewpoint} 🌰`);
+    });
+    hud.setAcorns(progress.creative ? '∞' : String(progress.acorns));
     if (input.consume('cruise')) {
       if (cruise.on) cruise.on = false;
       else if (vehicle.speed > 5) { cruise.on = true; cruise.target = vehicle.speed; cruise.i = 0.35; }
@@ -140,7 +285,23 @@ async function boot(): Promise<void> {
     updatePropVisibility(props, camera.position, world.size);
     casters.update(vp.x, vp.z);
     if (input.consume('help')) hud.toggleHelp();
-    if (input.consume('mute')) audio.setMuted(!audio.muted);
+    if (input.consume('mute')) { audio.setMuted(!audio.muted); hud.toast(audio.muted ? 'Sound off' : 'Sound on'); persist(); }
+    if (input.consume('settings') && !garage.open && !mapView.open) { settings.toggle(); loop.timeScale = settings.open ? 0 : 1; if (!settings.open) persist(); }
+    if (input.consume('minimap')) { minimap.setVisible(!minimap.visible); persist(); }
+    { const p = vehicle.body.translation(); minimap.update(dt, p.x, p.z, vehicle.yaw); }
+    if (input.consume('radio') && radio) hud.toast(`♪ <b>${radio.tune()}</b>`);
+    if (ambience) {
+      ambTimer += dt;
+      if (ambTimer > 0.5) {
+        ambTimer = 0;
+        const p = vehicle.body.translation();
+        let wet = 0; for (let a = 0; a < 8; a++) if (heightAt(world, p.x + Math.cos(a) * 70, p.z + Math.sin(a) * 70) < 0.3) wet++;
+        const su = surfaceAt(world, p.x, p.z), green = su === S.Grass || su === S.Mud || su === S.Dirt || su === S.Gravel ? 1 : 0.3;
+        const night = sky.hours < 5.5 || sky.hours > 20.5 ? 1 : 0;
+        amb = { day: 1 - night, night, shore: wet / 8, nature: green };
+      }
+      ambience.update(dt, amb);
+    }
     if (input.consume('camera')) chase.cycle();
     const slow = Math.abs(vehicle.speed) < 6;
     if (input.consume('flip') && slow && !garage.open) vehicle.flip();
@@ -152,7 +313,12 @@ async function boot(): Promise<void> {
     visual.update(vehicle, alpha, garage.open ? 0 : dt);
     chase.update(dt, visual.position, visual.quaternion, vehicle.speed, spec.half[2]);
     sky.update(garage.open ? 0 : dt, visual.position);
-    visual.setEnvironment(skyEnv.update(renderer, dt));
+    const envTex = skyEnv.update(renderer, dt);
+    visual.setEnvironment(envTex);
+    water.update(dt, envTex);
+    grass.update(dt, camera.position, visual.position);
+    wind.value += dt;
+    postfx.setTimeOfDay(sky.hours);
 
     // Headlight at night, aimed down the road ahead.
     const night = sky.isNight || sky.hours > 19.6 || sky.hours < 6.4;
@@ -182,8 +348,8 @@ async function boot(): Promise<void> {
       }
     });
     particles.update(dt);
-    audio.update(vehicle, garage.open ? 0 : input.controls.throttle);
-    hud.update(dt, vehicle, sky.hours, cruise.on ? cruise.target : null);
+    audio.update(vehicle, garage.open ? 0 : vehicle.appliedThrottle, chase.mode === 'hood');
+    hud.update(dt, vehicle, sky.hours, cruise.on ? cruise.target : null, autopilot.active ? autopilot.road!.def.name : null);
 
     let prompt: string | null = null;
     if (vehicle.canFlip) prompt = 'Press R to flip back onto your wheels';
@@ -208,6 +374,7 @@ async function boot(): Promise<void> {
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    const s = renderer.getDrawingBufferSize(new THREE.Vector2()); postfx.setSize(s.x, s.y);
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { persist(); audio.suspend(); loop.timeScale = 0; }
@@ -216,7 +383,7 @@ async function boot(): Promise<void> {
 
   loading.remove();
   loop.start();
-  (window as unknown as { __game: unknown }).__game = { vehicle, visual, sky, skyEnv, casters, particles, world, input, chase, terrainPhysics, cruise, scene, renderer, terrain, loop };
+  (window as unknown as { __game: unknown }).__game = { audio, vehicle, visual, sky, skyEnv, casters, particles, world, input, chase, terrainPhysics, cruise, voices: VOICES, scene, renderer, terrain, loop, postfx, grass, water, progress, gnomes, viewpoints, mapView, autopilot, minimap };
 }
 
 boot().catch((err) => {

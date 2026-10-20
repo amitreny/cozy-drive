@@ -38,6 +38,9 @@ function chunkGeometry(spacing: number): THREE.BufferGeometry {
 
 export class TerrainRenderer {
   readonly group = new THREE.Group();
+  /** Shared with water, grass and anything else that needs the ground height or surface on the GPU. */
+  readonly heightTex: THREE.DataTexture;
+  readonly surfTex: THREE.DataTexture;
   private meshes: THREE.InstancedMesh[] = [];
   private lastX = Infinity; private lastZ = Infinity;
   private per: number; private half: number;
@@ -47,6 +50,7 @@ export class TerrainRenderer {
     this.per = w.size / CHUNK; this.half = w.size / 2;
     const heightTex = new THREE.DataTexture(w.heights, V, V, THREE.RedFormat, THREE.FloatType);
     const surfTex = new THREE.DataTexture(w.surface, V, V, THREE.RedFormat, THREE.UnsignedByteType);
+    this.heightTex = heightTex; this.surfTex = surfTex;
     for (const t of [heightTex, surfTex]) { t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; }
     // Tiling 256² RGBA noise; value noise becomes one filtered texture fetch.
     const rnd = mulberry32(99), noise = new Uint8Array(256 * 256 * 4);

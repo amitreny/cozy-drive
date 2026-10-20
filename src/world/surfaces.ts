@@ -21,18 +21,18 @@ const def = (name: string, grip: number, crr: number, sink: number, soft: boolea
   ({ name, grip, crr, sink, soft, color: c(color), particle: particle === null ? null : c(particle), noise, bumpy });
 
 export const SURFACES: SurfaceDef[] = [
-  def('Asphalt', 1.0, 0.012, 0, false, 0x5d5f66, null, [300, 0.7, 0.25], 0),
-  def('Cobble', 0.85, 0.02, 0, false, 0x9a8f84, null, [160, 1.2, 0.55], 0.6),
-  def('Gravel', 0.65, 0.03, 0.01, false, 0x9a9283, 0xc9c0ae, [2400, 0.6, 0.8], 0.35),
-  def('Dirt', 0.75, 0.03, 0.015, false, 0xa77a52, 0xc49a70, [900, 0.7, 0.5], 0.25),
-  def('Grass', 0.62, 0.05, 0.02, false, 0x8db35f, 0x7fa552, [1800, 0.5, 0.35], 0.2),
-  def('Mud', 0.35, 0.08, 0.07, true, 0x5e4630, 0x4e3a28, [260, 1.5, 0.7], 0.15),
-  def('Sand', 0.45, 0.15, 0.06, true, 0xe8d3a2, 0xeedcb0, [3800, 0.5, 0.55], 0.1),
-  def('Snow', 0.35, 0.08, 0.06, true, 0xf4f7fb, 0xffffff, [1300, 0.9, 0.45], 0.1),
-  def('Ice', 0.12, 0.01, 0, false, 0xbfe2f2, 0xe8f6ff, [5200, 2, 0.15], 0),
-  def('Rock', 0.8, 0.02, 0, false, 0xa45a3f, 0xb88a72, [120, 1, 0.7], 0.7),
-  def('Wood', 0.75, 0.015, 0, false, 0x9b6b43, null, [200, 2, 0.6], 0.4),
-  def('Shallow water', 0.5, 0.1, 0.03, true, 0x6aa6b8, 0xd9f1f7, [700, 0.6, 0.8], 0.2),
+  def('Asphalt', 1.0, 0.012, 0, false, 0x5d5f66, null, [140, 0.7, 0.22], 0),
+  def('Cobble', 0.85, 0.02, 0, false, 0x9a8f84, null, [200, 1.0, 0.4], 0.6),
+  def('Gravel', 0.65, 0.03, 0.01, false, 0x9a9283, 0xc9c0ae, [850, 0.7, 0.42], 0.35),
+  def('Dirt', 0.75, 0.03, 0.015, false, 0xa77a52, 0xc49a70, [320, 0.7, 0.35], 0.25),
+  def('Grass', 0.62, 0.05, 0.02, false, 0x8db35f, 0x7fa552, [520, 0.6, 0.16], 0.2),
+  def('Mud', 0.35, 0.08, 0.07, true, 0x5e4630, 0x4e3a28, [170, 1.2, 0.45], 0.15),
+  def('Sand', 0.45, 0.15, 0.06, true, 0xe8d3a2, 0xeedcb0, [900, 0.6, 0.22], 0.1),
+  def('Snow', 0.35, 0.08, 0.06, true, 0xf4f7fb, 0xffffff, [620, 0.8, 0.26], 0.1),
+  def('Ice', 0.12, 0.01, 0, false, 0xbfe2f2, 0xe8f6ff, [1800, 1.2, 0.06], 0),
+  def('Rock', 0.8, 0.02, 0, false, 0xa45a3f, 0xb88a72, [160, 1.0, 0.45], 0.7),
+  def('Wood', 0.75, 0.015, 0, false, 0x9b6b43, null, [230, 1.5, 0.45], 0.4),
+  def('Shallow water', 0.5, 0.1, 0.03, true, 0x6aa6b8, 0xd9f1f7, [480, 0.6, 0.5], 0.2),
 ];
 
 export type TyreType = 'road' | 'allTerrain' | 'mud' | 'snow' | 'sand' | 'rally';

@@ -40,14 +40,32 @@ export function updatePropVisibility(group: THREE.Group, cam: THREE.Vector3, siz
 }
 
 type Part = { geo: THREE.BufferGeometry; mat: THREE.Material; y: number; tint: [number, number] };
+/** Shared wind clock for every swaying prop. Advance it once per frame. */
+export const wind = { value: 0 };
+function swaying(mat: THREE.MeshStandardMaterial, amount: number, base: number): THREE.MeshStandardMaterial {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWind = wind;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+uniform float uWind;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vec4 swayRoot = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float swayH = max(0.0, position.y + ${base.toFixed(2)});
+        float swayT = uWind * 1.1 + swayRoot.x * 0.045 + swayRoot.z * 0.035;
+        transformed.x += (sin(swayT) * 0.7 + sin(swayT * 2.3 + 1.7) * 0.3) * ${amount.toFixed(3)} * swayH;
+        transformed.z += cos(swayT * 0.8 + 0.6) * ${(amount * 0.6).toFixed(3)} * swayH;`);
+  };
+  mat.customProgramCacheKey = () => `sway-${amount}-${base}`;
+  return mat;
+}
 function propParts(): Part[][] {
   const flat = (c: number) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, flatShading: true });
   return [
     [{ geo: new THREE.CylinderGeometry(0.22, 0.32, 2.2, 6), mat: flat(0x7a5134), y: 1.1, tint: [0, 0] },
-     { geo: new THREE.ConeGeometry(2.1, 5.5, 7), mat: flat(0xffffff), y: 4.6, tint: [0x2f6b4f, 0x4f8a5a] }],
+     { geo: new THREE.ConeGeometry(2.1, 5.5, 7), mat: swaying(flat(0xffffff), 0.035, 2.75), y: 4.6, tint: [0x2f6b4f, 0x4f8a5a] }],
     [{ geo: new THREE.CylinderGeometry(0.25, 0.35, 2.6, 6), mat: flat(0x7a5134), y: 1.3, tint: [0, 0] },
-     { geo: new THREE.IcosahedronGeometry(2.4, 0), mat: flat(0xffffff), y: 4.0, tint: [0x6f9f4a, 0xb6b44e] }],
-    [{ geo: new THREE.IcosahedronGeometry(0.9, 0), mat: flat(0xffffff), y: 0.5, tint: [0x5f8f45, 0x8fae55] }],
+     { geo: new THREE.IcosahedronGeometry(2.4, 0), mat: swaying(flat(0xffffff), 0.04, 2.4), y: 4.0, tint: [0x6f9f4a, 0xb6b44e] }],
+    [{ geo: new THREE.IcosahedronGeometry(0.9, 0), mat: swaying(flat(0xffffff), 0.05, 0.9), y: 0.5, tint: [0x5f8f45, 0x8fae55] }],
     [{ geo: new THREE.DodecahedronGeometry(1.2, 0), mat: flat(0xffffff), y: 0.4, tint: [0x9a5a42, 0xb9a48f] }],
   ];
 }

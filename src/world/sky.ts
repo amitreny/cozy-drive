@@ -20,13 +20,18 @@ export class Sky {
   hours = 8.5;
   dayMinutes = 24;
   readonly uTop = { value: new THREE.Color() }; readonly uHorizon = { value: new THREE.Color() };
+  private uSunDir = { value: new THREE.Vector3(0, 1, 0) }; private uSunColor = { value: new THREE.Color() };
+  private uTime = { value: 0 }; private uNight = { value: 0 }; private uCloud = { value: 0.45 };
+  /** 0 = clear, 1 = overcast. Weather can drive this later. */
+  cloudCover = 0.45;
+  private time = 0;
 
   constructor(private scene: THREE.Scene) {
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: this.uTop, horizon: this.uHorizon },
+      uniforms: { top: this.uTop, horizon: this.uHorizon, sunDir: this.uSunDir, sunColor: this.uSunColor, uTime: this.uTime, uNight: this.uNight, uCloud: this.uCloud },
       vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying vec3 vP; void main(){ float h = clamp(vP.y * 1.6, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, pow(h, 0.7)), 1.0); }',
+      fragmentShader: SKY_FRAGMENT,
     });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 16), mat);
     this.dome.frustumCulled = false;
@@ -58,7 +63,49 @@ export class Sky {
     const elev = night ? 0.5 : Math.max(0.12, Math.sin(ang));
     const dir = new THREE.Vector3(-Math.cos(night ? 0.8 : ang), elev, 0.45).normalize();
     this.sun.position.copy(focus).addScaledVector(dir, 200);
+    this.time += dt;
+    this.uTime.value = this.time;
+    this.uCloud.value += (this.cloudCover - this.uCloud.value) * Math.min(1, dt * 0.2);
+    const nightAmt = this.hours < 5 || this.hours > 21 ? 1 : this.hours < 6.5 ? (6.5 - this.hours) / 1.5 : this.hours > 19.5 ? (this.hours - 19.5) / 1.5 : 0;
+    this.uNight.value = nightAmt;
+    // The visible sun follows the real arc (it may set below the horizon); the light keeps a minimum elevation.
+    const realElev = Math.sin(((this.hours - 6) / 12) * Math.PI);
+    this.uSunDir.value.set(-Math.cos(((this.hours - 6) / 12) * Math.PI), realElev, 0.45).normalize();
+    this.uSunColor.value.copy(this.sun.color).multiplyScalar(night ? 0 : 1);
     this.sun.target.position.copy(focus);
     this.dome.position.copy(focus);
   }
 }
+
+const SKY_FRAGMENT = /* glsl */`
+uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor;
+uniform float uTime; uniform float uNight; uniform float uCloud;
+varying vec3 vP;
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+void main() {
+  vec3 d = normalize(vP);
+  float h = clamp(d.y * 1.6, 0.0, 1.0);
+  vec3 col = d.y >= 0.0 ? mix(horizon, top, pow(h, 0.7)) : horizon * 0.92;
+  float sd = max(dot(d, sunDir), 0.0);
+  col += sunColor * (pow(sd, 1200.0) * 8.0 + pow(sd, 24.0) * 0.32 + pow(sd, 4.0) * 0.1);
+  vec3 moonDir = normalize(vec3(-sunDir.x, abs(sunDir.y) + 0.35, -sunDir.z));
+  float md = max(dot(d, moonDir), 0.0);
+  col += vec3(0.85, 0.9, 1.0) * (pow(md, 2500.0) * 3.0 + pow(md, 60.0) * 0.06) * uNight;
+  if (d.y > 0.0) {
+    vec2 uv = d.xz / (d.y + 0.15) * 0.9 + vec2(uTime * 0.0035, uTime * 0.0012);
+    float n = fbm(uv * 1.7);
+    float c = smoothstep(1.0 - uCloud, 1.25 - uCloud, n) * smoothstep(0.0, 0.2, d.y);
+    vec3 lit = mix(vec3(1.0), sunColor * 1.1 + 0.15, 0.35) * (0.78 + 0.45 * pow(sd, 3.0));
+    vec3 shade = mix(horizon, top, 0.5) * 0.85;
+    vec3 cloudCol = mix(shade, lit, smoothstep(0.3, 0.9, n));
+    cloudCol = mix(cloudCol, top * 0.5 + 0.02, uNight * 0.85);
+    col = mix(col, cloudCol, c * 0.9);
+    float star = step(0.9965, hash(floor(d.xz / (d.y + 0.25) * 260.0))) * smoothstep(0.08, 0.35, d.y);
+    col += vec3(star) * uNight * (1.0 - c) * (0.6 + 0.9 * hash(floor(d.xz * 900.0)));
+  }
+  gl_FragColor = vec4(col, 1.0);
+}
+`;

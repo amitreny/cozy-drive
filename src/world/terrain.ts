@@ -48,21 +48,6 @@ export function buildRoads(w: WorldData): THREE.Group {
   return group;
 }
 
-/** Sea plus inland lakes. */
-export function buildWater(w: WorldData): THREE.Group {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x4f9fb8, transparent: true, opacity: 0.82, roughness: 0.1, metalness: 0.05 });
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000), mat);
-  sea.rotation.x = -Math.PI / 2;
-  g.add(sea);
-  for (const lake of w.waters) {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(lake.r * 1.15, 64), mat);
-    m.rotation.x = -Math.PI / 2; m.position.set(lake.x, lake.level, lake.z);
-    g.add(m);
-  }
-  return g;
-}
-
 /** Subtle world-space grain so long road ribbons don't look flat. */
 const GRAIN_PARS = `
 varying vec2 vRoadXZ;

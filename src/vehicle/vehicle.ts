@@ -53,6 +53,8 @@ export class Vehicle {
   pressure = 2;
   assists: AssistLevel = 'relaxed';
   speed = 0;               // signed forward speed m/s
+  /** Throttle actually applied last step (player, cruise or autopilot), for engine sound. */
+  appliedThrottle = 0;
   airborne = false;
   upsideTime = 0;
   submergedTime = 0;
@@ -215,6 +217,7 @@ export class Vehicle {
     if (input.throttle > 0.1 && reverse && this.speed > -1) this.gear = 1;
     else if (input.brake > 0.1 && input.throttle < 0.05 && !reverse && this.speed < 0.8 && grounded > 0) this.gear = -1;
     const throttle = this.gear > 0 ? input.throttle : input.brake;
+    this.appliedThrottle = throttle;
     const brake = this.gear > 0 ? input.brake : input.throttle;
     const low = this.lowRange && s.lowRange ? s.lowRange : 1;
     const ratio = (this.gear > 0 ? s.gears[this.gear - 1] : s.reverse) * s.finalDrive * low;

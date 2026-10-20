@@ -3,7 +3,7 @@ import { limitGrade, MAX_GRADE, pinJunctions, ROADS, sampleRoad, segDist, SMOOTH
 import { S, type SurfaceId } from './surfaces';
 
 /** Bump when generation changes so cached worlds are rebuilt. */
-export const WORLD_VERSION = 6;
+export const WORLD_VERSION = 7;
 
 export interface Water { x: number; z: number; r: number; level: number }
 export interface WorldData {
@@ -98,7 +98,7 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
   });
 
   onProgress?.('Laying roads and highways');
-  const roads: RoadPath[] = [];
+  const roads: RoadPath[] = [], rawProfiles: Float32Array[] = [];
   for (const def of ROADS) {
     const { xs, zs } = sampleRoad(def);
     const raw = new Float32Array(xs.length);
@@ -107,13 +107,17 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
     const pinned = pinJunctions(hs, xs, zs, roads, 60);
     hs = limitGrade(hs, xs, zs, MAX_GRADE[def.kind], !!def.closed, pinned);
     roads.push({ def, xs, zs, hs });
+    rawProfiles.push(raw);
   }
   const roadW = new Float32Array(V * V), roadD = new Float32Array(V * V).fill(Infinity), roadS = new Int8Array(V * V).fill(-1);
   const carved = heights.slice();
-  for (const r of roads) {
-    const hw = r.def.width / 2, base = r.def.kind === 'highway' ? 12 : 6, reach = hw + 1.5 + base + 40;
+  roads.forEach((r, ri) => {
+    const hw = r.def.width / 2, base = r.def.kind === 'highway' ? 12 : 6, raw = rawProfiles[ri];
     for (let i = 0; i < r.xs.length - 1; i++) {
       const ax = r.xs[i], az = r.zs[i], bx = r.xs[i + 1], bz = r.zs[i + 1];
+      // Only visit as far as this segment's banks can reach: cut/fill depth at the centreline, plus margin for side slopes.
+      const depth = Math.max(Math.abs(raw[i] - r.hs[i]), Math.abs(raw[i + 1] - r.hs[i + 1]));
+      const reach = hw + 1.5 + Math.min(40, base + (depth + 8) * 1.3);
       forCells(n, cell, half, (ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az) / 2 + reach, (k, x, z) => {
         const [d, t] = segDist(x, z, ax, az, bx, bz);
         if (d > reach) return;
@@ -129,7 +133,7 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
         if (d <= hw + 0.5 && roadS[k] < 0) roadS[k] = r.def.surface;
       });
     }
-  }
+  });
   heights.set(carved);
 
   onProgress?.('Painting grass, sand, rock and snow');

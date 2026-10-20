@@ -10,6 +10,7 @@ export class Hud {
   private speed: HTMLElement; private sub: HTMLElement; private rpm: HTMLElement;
   private info: HTMLElement; private prompt: HTMLElement; private help: HTMLElement;
   private acc = 0;
+  private acornsEl: HTMLElement; private toasts: HTMLElement;
 
   constructor(root: HTMLElement) {
     const sp = el('div', 'panel hud-speed', root);
@@ -18,15 +19,27 @@ export class Hud {
     this.rpm = el('div', '', el('div', 'rpm', sp));
     this.info = el('div', 'panel hud-info', root);
     this.prompt = el('div', 'panel prompt', root);
+    this.acornsEl = el('div', 'panel hud-acorns', root, '🌰 0');
+    this.toasts = el('div', 'toasts', root);
     this.help = el('div', 'panel help', root, `
       <b>Cozy Drive</b> · prototype<br>
       <kbd>W</kbd><kbd>S</kbd> drive / brake / reverse · <kbd>A</kbd><kbd>D</kbd> steer<br>
       <kbd>Space</kbd> handbrake · <kbd>R</kbd> flip back · <kbd>C</kbd> camera<br>
       <kbd>G</kbd> garage · <kbd>[</kbd><kbd>]</kbd> tyre pressure<br>
-      <kbd>F</kbd> low range (4×4) · <kbd>L</kbd> diff lockers · <kbd>M</kbd> mute<br>
-      <kbd>K</kbd> cruise control (brake cancels)<br>
+      <kbd>F</kbd> low range (4×4) · <kbd>L</kbd> diff lockers<br>
+      <kbd>K</kbd> cruise control · <kbd>P</kbd> autopilot (steer/brake cancels)<br>
+      <kbd>M</kbd> map · <kbd>Tab</kbd> mini map · <kbd>T</kbd> radio · <kbd>N</kbd> mute · <kbd>Esc</kbd> sound settings<br>
       Drag the mouse to look around · <kbd>H</kbd> hide this<br>
       Gamepad: triggers, left stick, Y flip, B camera, Start garage`);
+  }
+
+  setAcorns(text: string): void { this.acornsEl.textContent = `🌰 ${text}`; }
+
+  /** A friendly note that fades away by itself. */
+  toast(html: string): void {
+    const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = html;
+    this.toasts.appendChild(t);
+    setTimeout(() => t.remove(), 4200);
   }
 
   toggleHelp(): void { this.help.style.display = this.help.style.display === 'none' ? '' : 'none'; }
@@ -36,12 +49,12 @@ export class Hud {
     if (text) this.prompt.textContent = text;
   }
 
-  update(dt: number, v: Vehicle, hours: number, cruise: number | null = null): void {
+  update(dt: number, v: Vehicle, hours: number, cruise: number | null = null, autopilot: string | null = null): void {
     this.acc += dt;
     if (this.acc < 0.08) return;
     this.acc = 0;
     this.speed.textContent = String(Math.round(Math.abs(v.speed) * 3.6));
-    this.sub.textContent = `km/h · gear ${v.gearLabel}${cruise !== null ? ` · cruise ${Math.round(cruise * 3.6)}` : ''}`;
+    this.sub.textContent = `km/h · gear ${v.gearLabel}${cruise !== null ? ` · cruise ${Math.round(cruise * 3.6)}` : ''}${autopilot ? ` · autopilot` : ''}`;
     this.rpm.style.width = `${Math.min(100, (v.rpm / v.spec.maxRpm) * 100)}%`;
     const s = v.spec;
     const mode = s.layout === 'AWD' ? (v.lowRange ? '4L' : s.lowRange ? '4H' : 'AWD') : s.layout;

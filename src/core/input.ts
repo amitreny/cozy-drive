@@ -3,14 +3,14 @@ import { clamp } from './math';
 /** Continuous driving controls, already smoothed so digital keys feel analog. */
 export interface DriveControls { throttle: number; brake: number; steer: number; handbrake: number }
 
-export type ButtonAction = 'flip' | 'garage' | 'camera' | 'help' | 'mute' | 'pressureDown' | 'pressureUp' | 'driveMode' | 'diffLock' | 'cruise';
+export type ButtonAction = 'flip' | 'garage' | 'camera' | 'help' | 'mute' | 'pressureDown' | 'pressureUp' | 'driveMode' | 'diffLock' | 'cruise' | 'map' | 'autopilot' | 'radio' | 'settings' | 'minimap';
 
 const KEYMAP: Record<string, ButtonAction> = {
-  KeyR: 'flip', KeyG: 'garage', KeyC: 'camera', KeyH: 'help', KeyM: 'mute',
+  KeyR: 'flip', KeyG: 'garage', KeyC: 'camera', KeyH: 'help', KeyN: 'mute', KeyM: 'map', KeyP: 'autopilot', KeyT: 'radio', Escape: 'settings', Tab: 'minimap',
   BracketLeft: 'pressureDown', BracketRight: 'pressureUp', KeyF: 'driveMode', KeyL: 'diffLock', KeyK: 'cruise',
 };
 // Standard gamepad mapping: 3=Y, 2=X, 1=B, 9=start, 8=back, 4/5 bumpers, 0=A.
-const PADMAP: Record<number, ButtonAction> = { 3: 'flip', 9: 'garage', 1: 'camera', 8: 'help', 4: 'pressureDown', 5: 'pressureUp', 2: 'driveMode', 12: 'cruise' };
+const PADMAP: Record<number, ButtonAction> = { 3: 'flip', 9: 'garage', 1: 'camera', 8: 'help', 4: 'pressureDown', 5: 'pressureUp', 2: 'driveMode', 12: 'cruise', 13: 'map', 14: 'autopilot', 15: 'radio' };
 
 export class Input {
   readonly controls: DriveControls = { throttle: 0, brake: 0, steer: 0, handbrake: 0 };
@@ -28,7 +28,7 @@ export class Input {
       this.lastDevice = 'keyboard';
       if (!e.repeat && KEYMAP[e.code]) this.pressed.add(KEYMAP[e.code]);
       this.keys.add(e.code);
-      if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+      if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') e.preventDefault();
     });
     target.addEventListener('keyup', (e) => this.keys.delete(e.code));
     target.addEventListener('blur', () => this.keys.clear());
