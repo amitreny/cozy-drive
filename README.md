@@ -17,6 +17,22 @@ A cozy, offline, open-world driving game for the browser. This repository holds 
 ![The garage: a pickup with off-road wheels and a lift kit](docs/screenshots/garage.jpg)
 *The garage: every change previews instantly on the car.*
 
+### Flying
+
+| | |
+|---|---|
+| ![The Wren trainer climbing out over Island Airfield at dusk](docs/screenshots/airfield.jpg) | ![The Hummingbird helicopter over the village plaza](docs/screenshots/helicopter.jpg) |
+| *The Wren climbing out of Island Airfield* | *The Hummingbird over Hearthwick* |
+| ![The Dandelion balloon at sunrise with the Summit Road switchbacks behind](docs/screenshots/balloon.jpg) | ![The Puffin floatplane on the water by Harbour Pier](docs/screenshots/seaplane.jpg) |
+| *The Dandelion at sunrise, steering by the wind at each height* | *The Puffin at Harbour Pier* |
+
+### Deliveries
+
+| | |
+|---|---|
+| ![The bakery's job board, offering bread runs to homes around the island](docs/screenshots/job-board.jpg) | ![Bread delivered to the Pennywhistles at Clover Hollow](docs/screenshots/delivery.jpg) |
+| *Every business has a job board* | *Delivered to the door: Acorns earned* |
+
 Screenshots come from the real game and can be regenerated with `npm run screenshots`.
 
 ## Run it
