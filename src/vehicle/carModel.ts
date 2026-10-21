@@ -12,6 +12,8 @@ import { CAR_TYPES, restGroundY, type VehicleSpec } from './spec';
 export interface CarModel {
   root: THREE.Group; body: THREE.Group; wheels: THREE.Group[]; headlights: THREE.MeshStandardMaterial[];
   reflective: THREE.MeshStandardMaterial[]; dispose(): void;
+  /** Lamps for the moment: headlights at night, brake and reversing lamps (detailed models; else only headlights). */
+  setLights?(state: { night: boolean; brake: number; reverse: boolean }, dt: number): void;
   /** Where each wheel sits across the car (defaults to the physics track). */
   wheelX?: number[];
 }

@@ -1,0 +1,11 @@
+<!doctype html><html><body><script type="module">
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const out = {};
+for (const [id, def] of Object.entries(DETAILED)) {
+  const g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def);
+  out[id] = [a.wheels.map((w) => `c=${w.center.toArray().map((x) => x.toFixed(3))} r=${w.radius.toFixed(3)} tilt=${(Math.acos(w.axis.x) * 180 / Math.PI).toFixed(2)}`).join('\n    '), `ground=${a.ground.toFixed(3)}`];
+}
+window.__info = out; window.__done = true;
+</script></body></html>

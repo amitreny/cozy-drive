@@ -1,0 +1,31 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const out = {};
+for (const [id, def] of Object.entries(DETAILED)) {
+  const g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def); a.scene.updateMatrixWorld(true);
+  out[id] = a.wheels.map((w) => {
+    const pts = [], v = new THREE.Vector3();
+    for (const m of w.parts) { const p = m.geometry.getAttribute('position'); for (let i = 0; i < p.count; i++) pts.push(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).clone()); }
+    const mean = pts.reduce((s, p) => s.add(p), new THREE.Vector3()).divideScalar(pts.length);
+    const C = [[0,0,0],[0,0,0],[0,0,0]];
+    for (const p of pts) { const d = [p.x-mean.x, p.y-mean.y, p.z-mean.z]; for (let r=0;r<3;r++) for (let c=0;c<3;c++) C[r][c]+=d[r]*d[c]; }
+    // smallest eigenvector via inverse power iteration on (C + eps I)
+    const M = new THREE.Matrix3().set(...C.flat()); const Mi = M.clone().invert();
+    let e = new THREE.Vector3(1, 0.1, 0.1).normalize(); for (let k=0;k<60;k++) e = e.applyMatrix3(Mi).normalize();
+    if (e.x < 0) e.negate();
+    // bbox of the tyre alone vs all parts, and true radius from the axle
+    const rad = pts.map((p) => { const d = p.clone().sub(w.center); return d.sub(e.clone().multiplyScalar(d.dot(e))).length(); });
+    const maxR = Math.max(...rad);
+    // fitted centre: midpoint of extremes along y and z in the wheel plane
+    let ymin=1e9,ymax=-1e9,zmin=1e9,zmax=-1e9; for (const p of pts) { ymin=Math.min(ymin,p.y); ymax=Math.max(ymax,p.y); zmin=Math.min(zmin,p.z); zmax=Math.max(zmax,p.z); }
+    return { names: w.parts.map((m) => m.name).join('|').slice(0, 120), n: w.parts.length,
+      axisDeg: +(Math.acos(Math.min(1, e.x)) * 180 / Math.PI).toFixed(2), axis: e.toArray().map((x) => +x.toFixed(3)),
+      centre: w.center.toArray().map((x) => +x.toFixed(3)), mean: mean.toArray().map((x) => +x.toFixed(3)),
+      radius: +w.radius.toFixed(3), maxRfromCentre: +maxR.toFixed(3), minRim: +Math.min(...rad).toFixed(3) };
+  });
+}
+window.__info = out; window.__done = true;
+</script></body></html>

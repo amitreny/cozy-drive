@@ -1,0 +1,25 @@
+<!doctype html><html><body style="margin:0"><canvas id="c" width="1200" height="680"></canvas><script type="module">
+import * as THREE from 'three';
+import { loadDetailedModels, buildDetailedModel } from '/src/vehicle/detailedModel.ts';
+import { CAR_TYPES } from '/src/vehicle/spec.ts';
+import { defaultBuild } from '/src/customization/build.ts';
+await loadDetailedModels();
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+r.setScissorTest(true); r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping;
+const ids = new URLSearchParams(location.search).get('ids').split(',');
+const W = 400, H = 340;
+ids.forEach((id, k) => {
+  const spec = CAR_TYPES[id], m = buildDetailedModel(spec, { ...defaultBuild(id), paint: '#c9d2d8' });
+  for (let i = 0; i < 30; i++) m.setLights({ night: true, brake: k % 2 ? 0 : 1, reverse: k % 2 === 1 }, 0.1);
+  for (let row = 0; row < 2; row++) {
+    const s = new THREE.Scene(); s.add(new THREE.HemisphereLight(0x8090b0, 0x202030, 0.6)); s.add(m.root); m.root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(m.root), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    const front = row === 0, dist = Math.max(sz.x, sz.y) * 1.6;
+    const cam = new THREE.PerspectiveCamera(32, W / H, 0.05, 100);
+    cam.position.set(c.x + dist * 0.45, c.y + dist * 0.3, c.z + (front ? 1 : -1) * (sz.z / 2 + dist)); cam.lookAt(c.x, c.y, c.z + (front ? 1 : -1) * sz.z * 0.3);
+    const x = k * W, y = row * H;
+    r.setViewport(x, 680 - y - H, W, H); r.setScissor(x, 680 - y - H, W, H); r.setClearColor(0x10141c); r.clear(); r.render(s, cam);
+  }
+});
+window.__info = {}; window.__done = true;
+</script></body></html>

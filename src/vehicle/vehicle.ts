@@ -47,6 +47,8 @@ export class Vehicle {
   spec!: VehicleSpec;
   wheels: Wheel[] = [];
   gear = 1;
+  /** The service brake being applied (0–1), for the brake lights. */
+  appliedBrake = 0;
   rpm = 800;
   lowRange = false;
   lockersOn = false;
@@ -219,6 +221,7 @@ export class Vehicle {
     const throttle = this.gear > 0 ? input.throttle : input.brake;
     this.appliedThrottle = throttle;
     const brake = this.gear > 0 ? input.brake : input.throttle;
+    this.appliedBrake = brake;
     const low = this.lowRange && s.lowRange ? s.lowRange : 1;
     const ratio = (this.gear > 0 ? s.gears[this.gear - 1] : s.reverse) * s.finalDrive * low;
     const wheelRpm = (Math.abs(this.speed) / s.wheelRadius) * (60 / (2 * Math.PI)) * ratio;

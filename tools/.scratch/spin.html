@@ -1,0 +1,31 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { loadDetailedModels, buildDetailedModel } from '/src/vehicle/detailedModel.ts';
+import { CAR_TYPES } from '/src/vehicle/spec.ts';
+import { defaultBuild } from '/src/customization/build.ts';
+await loadDetailedModels();
+const out = {};
+for (const id of (new URLSearchParams(location.search).get('ids') ?? Object.keys(CAR_TYPES).join(',')).split(',')) {
+  const spec = CAR_TYPES[id], m = buildDetailedModel(spec, defaultBuild(id));
+  out[id] = m.wheels.map((g) => {
+    const spin = g.children[0]; spin.updateMatrixWorld(true);
+    const inv = spin.matrixWorld.clone().invert(), pts = [];
+    spin.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.getAttribute('position'), M = inv.clone().multiply(o.matrixWorld); for (let i = 0; i < p.count; i++) pts.push(new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(M)); });
+    // Re-measure in the spinning frame: the axle should be +x and the hub on it.
+    const meshes = []; spin.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    const frame = new THREE.Group(); const holderClones = meshes.map((o) => { const c = o.clone(); inv.clone().multiply(o.matrixWorld).decompose(c.position, c.quaternion, c.scale); frame.add(c); return c; });
+    frame.updateMatrixWorld(true);
+    // Direct run-out: split the turn into 72 slices; in each, the tyre's outermost radius and its outer edges
+    // across the axle. A true wheel gives the same numbers in every slice.
+    const sw = (list) => { const vs = []; for (const c of list) { const p = c.geometry.getAttribute('position'); for (let i = 0; i < p.count; i++) vs.push(new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(c.matrixWorld)); }
+      const rMax = Math.max(...vs.map((p) => Math.hypot(p.y, p.z)));
+      const fit = (f) => { const M = new THREE.Matrix3(), v = new THREE.Vector3(), m = [0,0,0,0,0,0,0,0,0];
+        for (const p of vs) { const r = Math.hypot(p.y, p.z); if (r < rMax * 0.9) continue; const t = Math.atan2(p.z, p.y), row = [1, Math.cos(t), Math.sin(t)], y = f(p, r);
+          for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) m[i*3+j] += row[i]*row[j]; v.setComponent(i, v.getComponent(i) + row[i]*y); } }
+        M.set(...m); v.applyMatrix3(M.invert()); return Math.hypot(v.y, v.z) * 1000; };
+      return `sway=${fit((p) => p.x).toFixed(1)} hop=${fit((p, r) => r).toFixed(1)} r=${rMax.toFixed(3)}`; };
+    return `ALL ${sw(holderClones)} :: ` + holderClones.map((c) => `${c.geometry.getAttribute('position').count}v ${sw([c])}`).join(' ; ');
+  }).join(' || ');
+}
+window.__info = out; window.__done = true;
+</script></body></html>

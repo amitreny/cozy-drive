@@ -1,0 +1,13 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const out = {};
+for (const id of ['skipper', 'bramble']) {
+  const def = DETAILED[id], g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def);
+  out[id] = a.wheels.map((w, i) => `W${i}: ` + w.parts.map((m) => { m.geometry.computeBoundingBox(); const l = m.geometry.boundingBox.getSize(new THREE.Vector3()); const wb = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+    return `${m.name}[local ${l.toArray().map((v) => v.toFixed(3))} world ${wb.toArray().map((v) => v.toFixed(3))} det ${m.matrixWorld.determinant().toFixed(4)} verts ${m.geometry.getAttribute('position').count}]`; }).join(' ')).join('\n   ');
+}
+window.__info = out; window.__done = true;
+</script></body></html>

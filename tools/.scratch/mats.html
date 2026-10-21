@@ -1,0 +1,16 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const out = {};
+for (const [id, def] of Object.entries(DETAILED)) {
+  const g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def); a.scene.updateMatrixWorld(true);
+  const mats = new Map(); let tex = 0;
+  a.scene.traverse((o) => { if (!o.isMesh) return; const ms = Array.isArray(o.material) ? o.material : [o.material];
+    const bb = new THREE.Box3().setFromObject(o), c = bb.getCenter(new THREE.Vector3());
+    for (const m of ms) { if (m.map) tex++; const k = m.name || '(unnamed)'; const e = mats.get(k) ?? { n: 0, col: '#' + m.color.getHexString(), em: m.emissive ? '#' + m.emissive.getHexString() : '', map: !!m.map, meshes: [] }; e.n++; if (e.meshes.length < 4) e.meshes.push(`${o.name}@${c.toArray().map((x) => x.toFixed(2)).join(',')}`); mats.set(k, e); } });
+  out[id] = { body: a.body.min.toArray().concat(a.body.max.toArray()).map((x) => +x.toFixed(2)), textured: tex, mats: Object.fromEntries(mats) };
+}
+window.__info = out; window.__done = true;
+</script></body></html>

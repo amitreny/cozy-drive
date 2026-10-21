@@ -1,0 +1,23 @@
+<!doctype html><html><body style="margin:0"><canvas id="c" width="1200" height="680"></canvas><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+r.setScissorTest(true); r.outputColorSpace = THREE.SRGBColorSpace;
+const ids = ['pip', 'comet'];
+for (let k = 0; k < 2; k++) {
+  const def = DETAILED[ids[k]], g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def), B = a.body, s = new THREE.Scene();
+  s.add(new THREE.HemisphereLight(0xffffff, 0x667788, 2.5)); s.add(a.scene);
+  const W = B.max.x - B.min.x, L = B.max.z - B.min.z, top = B.max.y + 1;
+  // grid: lines every 0.05 of length (u) across the front 40%, and every 0.1 of width
+  const mat = new THREE.LineBasicMaterial({ color: 0xff0000 }), mat2 = new THREE.LineBasicMaterial({ color: 0x0000ff });
+  for (let u = 0.6; u <= 1.0001; u += 0.05) { const z = B.min.z + u * L; s.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(B.min.x, top, z), new THREE.Vector3(B.max.x, top, z)]), Math.round(u * 20) % 2 ? mat2 : mat)); }
+  for (let f = 0; f <= 1.0001; f += 0.1) { const x = B.min.x + f * W; s.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, top, B.min.z + 0.6 * L), new THREE.Vector3(x, top, B.max.z)]), mat)); }
+  const cam = new THREE.OrthographicCamera(-W * 0.6, W * 0.6, L * 0.24, -L * 0.24, 0.01, 1000);
+  cam.position.set((B.min.x + B.max.x) / 2, top + 50, B.min.z + 0.8 * L); cam.up.set(0, 0, 1); cam.lookAt((B.min.x + B.max.x) / 2, 0, B.min.z + 0.8 * L);
+  cam.left = -W * 0.6; cam.right = W * 0.6; const asp = 600 / 680; cam.top = W * 0.6 / asp; cam.bottom = -W * 0.6 / asp; cam.updateProjectionMatrix();
+  r.setViewport(k * 600, 0, 600, 680); r.setScissor(k * 600, 0, 600, 680); r.setClearColor(0xdde6ea); r.clear(); r.render(s, cam);
+}
+window.__info = {}; window.__done = true;
+</script></body></html>

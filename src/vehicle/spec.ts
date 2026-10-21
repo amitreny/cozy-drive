@@ -112,7 +112,7 @@ export const CAR_TYPES: Record<string, VehicleSpec> = {
     layout: 'RWD', frontSplit: 0, diffLock: 0.2, lockable: false,
     front: axle(0, 0, 1.25, 0.55, 7000, { antiRoll: 0.55 }), rear: axle(0, 0, 1.35, 0, 5000, { antiRoll: 0.5 }),
     drag: 0.95, wadingDepth: 0.45, sound: { cylinders: 4, tone: 0.85 }, approachDeg: 20,
-  }, { wheelbase: 3.0, clearance: 0.18, wheels: { fz: 1.847, rz: -1.563, cx: 0, halfTrack: 1.209, r: 0.565 }, body: { x: 1.592, y1: 3.023, z0: -2.685, z1: 2.997 }, ground: -0.199 }),
+  }, { wheelbase: 3.0, clearance: 0.18, wheels: { fz: 1.847, rz: -1.563, cx: 0, halfTrack: 1.209, r: 0.523 }, body: { x: 1.592, y1: 3.023, z0: -2.685, z1: 2.997 }, ground: -0.156 }),
   maple: fit({
     id: 'maple', name: 'Maple · family sedan', mass: 1250, comY: -0.3, comZ: 0.3, inertiaScale: [1.1, 1.4, 1.1], oldRadius: 0.32,
     restLength: 0.32, wheelWidth: 0.3, tyre: 'road', pressure: 2.1, baseGrip: 1.03,

@@ -489,7 +489,8 @@ async function boot(): Promise<void> {
     headlight.intensity = night && !air ? 60 : 0;
     headlight.position.copy(visual.position).addScaledVector(fwd, spec.half[2]).y += 0.3;
     headlight.target.position.copy(visual.position).addScaledVector(fwd, 25);
-    visual.model.headlights.forEach((m) => (m.emissiveIntensity = night ? 3 : 0.4));
+    if (visual.model.setLights) visual.model.setLights({ night: night && !air, brake: air ? 0 : vehicle.appliedBrake, reverse: !air && vehicle.gear < 0 }, dt);
+    else visual.model.headlights.forEach((m) => (m.emissiveIntensity = night ? 3 : 0.4));
     barriers.setNight(night ? 1 : 0); town.setNight(night ? 1 : 0);
     airportsView.update(dt, flight.wind.at(focusPos.x, focusPos.z, 10, { x: 0, y: 0, z: 0 }), night ? 1 : 0);
 

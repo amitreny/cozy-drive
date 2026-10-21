@@ -1,0 +1,36 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DETAILED, analyzeCar } from '/src/vehicle/detailedModel.ts';
+const pix = (tex) => { const img = tex.image, c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return { d: g.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height }; };
+const out = {};
+for (const [id, def] of Object.entries(DETAILED)) {
+  const g = (await new GLTFLoader().loadAsync(`/models/cars/${def.file}.glb`)).scene;
+  const a = analyzeCar(g, def); a.scene.updateMatrixWorld(true);
+  const wheel = new Set(a.wheels.flatMap((w) => w.parts)); const B = a.body, span = B.max.z - B.min.z;
+  const fam = new Map(); const A = new THREE.Vector3(), Bv = new THREE.Vector3(), C = new THREE.Vector3();
+  a.scene.traverse((o) => { if (!o.isMesh || wheel.has(o)) return;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry, pos = geo.getAttribute('position'), uv = geo.getAttribute('uv');
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (let i = 0; i < pos.count / 3; i++) {
+      let mi = 0; for (const gr of geo.groups) if (i * 3 >= gr.start && i * 3 < gr.start + gr.count) mi = gr.materialIndex;
+      const m = mats[mi], col = m.color.clone();
+      if (m.map && uv) { const p = m.__p ??= pix(m.map); const u = (uv.getX(i*3)+uv.getX(i*3+1)+uv.getX(i*3+2))/3, v = (uv.getY(i*3)+uv.getY(i*3+1)+uv.getY(i*3+2))/3;
+        const x = Math.min(p.w-1, Math.max(0, Math.floor((((u%1)+1)%1)*p.w))), y = Math.min(p.h-1, Math.max(0, Math.floor((((v%1)+1)%1)*p.h))), k = (y*p.w+x)*4;
+        col.multiply(new THREE.Color().setRGB(p.d[k]/255, p.d[k+1]/255, p.d[k+2]/255, THREE.SRGBColorSpace)); }
+      A.fromBufferAttribute(pos, i*3).applyMatrix4(o.matrixWorld); Bv.fromBufferAttribute(pos, i*3+1).applyMatrix4(o.matrixWorld); C.fromBufferAttribute(pos, i*3+2).applyMatrix4(o.matrixWorld);
+      const n = C.clone().sub(Bv).cross(A.clone().sub(Bv)); const area = n.length() / 2; n.normalize();
+      const cz = (A.z + Bv.z + C.z) / 3, u = (cz - B.min.z) / span; if (u > 0.2 && u < 0.8) continue;
+      const end = u >= 0.8 ? 'F' : 'R', hex = '#' + col.getHexString(THREE.SRGBColorSpace);
+      const q = hex.slice(0, 2) + hex[3] + hex[5]; const key = `${end} ${m.name} ${hex}`;
+      const f = fam.get(key) ?? { area: 0, n: 0, x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9, nz: 0 };
+      f.area += area; f.n++; f.nz += n.z * area;
+      for (const P of [A, Bv, C]) { f.x0 = Math.min(f.x0, P.x); f.x1 = Math.max(f.x1, P.x); f.y0 = Math.min(f.y0, P.y); f.y1 = Math.max(f.y1, P.y); f.z0 = Math.min(f.z0, P.z); f.z1 = Math.max(f.z1, P.z); }
+      fam.set(key, f);
+    } });
+  const H = B.max.y - B.min.y, W = B.max.x - B.min.x;
+  out[id] = [...fam.entries()].filter(([, f]) => f.area > span * span * 0.0004).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, f]) => `${k} n=${f.n} a=${(f.area / span / span * 1e4).toFixed(1)} nz=${(f.nz / f.area).toFixed(2)} y=${((f.y0 - B.min.y) / H).toFixed(2)}..${((f.y1 - B.min.y) / H).toFixed(2)} x=${((f.x0 - B.min.x) / W).toFixed(2)}..${((f.x1 - B.min.x) / W).toFixed(2)} u=${((f.z0 - B.min.z) / span).toFixed(2)}..${((f.z1 - B.min.z) / span).toFixed(2)}`);
+}
+window.__info = out; window.__done = true;
+</script></body></html>

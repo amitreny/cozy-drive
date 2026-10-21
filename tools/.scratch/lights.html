@@ -1,0 +1,29 @@
+<!doctype html><html><body style="margin:0;background:#cfd8dc"><canvas id="c" width="1200" height="680"></canvas><script type="module">
+import * as THREE from 'three';
+import { loadDetailedModels, buildDetailedModel } from '/src/vehicle/detailedModel.ts';
+import { CAR_TYPES } from '/src/vehicle/spec.ts';
+import { defaultBuild } from '/src/customization/build.ts';
+await loadDetailedModels();
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+r.setScissorTest(true); r.outputColorSpace = THREE.SRGBColorSpace;
+const W = 600, H = 340, ids = [new URLSearchParams(location.search).get('id')];
+const mode = new URLSearchParams(location.search).get('mode') ?? 'debug';
+ids.forEach((id) => {
+  const spec = CAR_TYPES[id], m = buildDetailedModel(spec, { ...defaultBuild(id), paint: '#9aa7b0' });
+  const raw = buildDetailedModel(spec, { ...defaultBuild(id), paint: '#9aa7b0' });
+  m.root.traverse((o) => { if (!o.isMesh || !Array.isArray(o.material)) return; const dbg = [0, 0, 0, 0x00ffff, 0x3060ff, 0xff9900, 0xff00ff, 0x8000ff, 0x00ff40]; o.material = o.material.map((mm, i) => i >= 3 ? new THREE.MeshBasicMaterial({ color: dbg[i] }) : mm); });
+  const [hx, hy, hz] = spec.half;
+  for (let k = 0; k < 4; k++) { const col = k % 2, row = k >> 1, mm = row ? m : raw;
+    const s = new THREE.Scene(); s.add(new THREE.HemisphereLight(0xffffff, 0x667788, 2.2)); const d = new THREE.DirectionalLight(0xffffff, 1.5); d.position.set(3, 5, col % 2 ? -4 : 4); s.add(d);
+    s.add(mm.root); mm.root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(mm.root), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    const front = col === 0, side = 0.3;
+    const cam = new THREE.PerspectiveCamera(30, W / H, 0.05, 100);
+    const dist = Math.max(sz.x, sz.y) * 1.5;
+    cam.position.set(c.x + side * dist * 0.8, c.y + dist * 0.12, c.z + (front ? 1 : -1) * (sz.z / 2 + dist)); cam.lookAt(c.x, c.y - sz.y * 0.05, c.z + (front ? 1 : -1) * sz.z * 0.35);
+    const x = col * W, y = row * H;
+    r.setViewport(x, 680 - y - H, W, H); r.setScissor(x, 680 - y - H, W, H); r.setClearColor(0xdde6ea); r.clear(); r.render(s, cam);
+  }
+});
+window.__info = {}; window.__done = true;
+</script></body></html>

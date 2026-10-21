@@ -1,0 +1,13 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const g = (await new GLTFLoader().loadAsync('/models/cars/offroader.glb')).scene; g.updateMatrixWorld(true);
+const out = {};
+g.traverse((o) => { if (!/Tire[1-4]$/.test(o.name)) return;
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(); o.matrixWorld.decompose(p, q, s);
+  const e = new THREE.Euler().setFromQuaternion(q);
+  const geo = o.geometry; geo.computeBoundingBox();
+  out[o.name] = `det=${o.matrixWorld.determinant().toFixed(3)} rot=${[e.x, e.y, e.z].map((v) => (v * 180 / Math.PI).toFixed(1))} scale=${s.toArray().map((v) => v.toFixed(3))} verts=${geo.getAttribute('position').count} idx=${geo.index?.count} bbox=${geo.boundingBox.min.toArray().map((v) => v.toFixed(3))}/${geo.boundingBox.max.toArray().map((v) => v.toFixed(3))} parent=${o.parent?.name}`;
+});
+window.__info = out; window.__done = true;
+</script></body></html>
