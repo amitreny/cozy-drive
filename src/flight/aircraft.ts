@@ -139,9 +139,10 @@ export class Aircraft {
     this.beta = Math.atan2(dot(s.air, s.lf), Math.max(1, Math.abs(fwdAir)));
 
     // Crash checks: a sudden velocity change means the airframe (not the gear) hit something hard.
+    // Planes get some slack so a nose-low or bounced landing scrapes through rather than ending the flight.
     if (this.hasLastV) {
       const dv = Math.hypot(s.v.x - this.lastV.x, s.v.y - this.lastV.y, s.v.z - this.lastV.z);
-      if (dv > (spec.kind === 'balloon' ? 6 : 4.5)) this.crashed = this.crashed ?? 'impact';
+      if (dv > (spec.kind === 'balloon' ? 6 : spec.kind === 'plane' ? 7 : 4.5)) this.crashed = this.crashed ?? 'impact';
     }
     set(this.lastV, s.v.x, s.v.y, s.v.z); this.hasLastV = true;
 
@@ -232,7 +233,7 @@ export class Aircraft {
       const ix = (s.c.x * fl + s.sp.x * fs + s.n.x * g.load) * dt, iy = (s.c.y * fl + s.sp.y * fs + s.n.y * g.load) * dt, iz = (s.c.z * fl + s.sp.z * fs + s.n.z * g.load) * dt;
       body.applyImpulseAtPoint({ x: ix, y: iy, z: iz }, g.point, true);
       // Touching down far too fast (gear bottoms out at a high sink rate) is a crash, not a landing.
-      if (g.comp >= travel * 0.95 && cv > 3.5) this.crashed = this.crashed ?? 'hard landing';
+      if (g.comp >= travel * 0.95 && cv > (spec.kind === 'plane' ? 5 : 3.5)) this.crashed = this.crashed ?? 'hard landing';
     }
     this.onGround = contacts > 0;
   }

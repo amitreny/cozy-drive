@@ -174,4 +174,14 @@ describe('the other aircraft', () => {
     run(5, 'relaxed');
     expect(ac.crashed).not.toBeNull();
   });
+  it('survives a firm, slightly nose-low touchdown', () => {
+    for (const id of ['wren', 'poppy', 'kestrel']) {
+      const { ac, run } = setup(id, { y: 2.5, speed: 28 });
+      const h = 3 * deg; // 6° nose down
+      ac.body.setRotation({ x: Math.sin(h), y: 0, z: 0, w: Math.cos(h) }, true);
+      ac.body.setLinvel({ x: 0, y: -4.5, z: 28 }, true);
+      run(4, 'relaxed');
+      expect(ac.crashed, id).toBeNull();
+    }
+  });
 });
