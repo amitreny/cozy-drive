@@ -32,6 +32,27 @@ export type GearType = 'wheel' | 'skid' | 'basket';
 export interface GearSpec { pos: V; travel: number; type: GearType; steer?: number; brake?: boolean }
 export interface FloatSpec { pos: V; half: V; volume: number }
 
+/**
+ * The propeller as drawn, fitted to the model's nose (body frame). Its radius is the engine's `propRadius`.
+ * The models' own propellers are single static meshes, so they are cut out (`strip`) and this one is built instead.
+ */
+export interface PropVisual {
+  hub: V; blades: number;
+  /** Geometric pitch, m per turn: sets the blade twist. */
+  pitch: number;
+  /** Widest chord, as a fraction of the radius. */
+  chord: number;
+  /** `base`: z of the spinner's back plate. */
+  spinner: { base: number; length: number; radius: number; color: number } | null;
+  /** `front` faces forward (polished), `rear` faces the pilot (anti-glare); tip bands from the tip inwards. */
+  colors: { front: number; rear: number; tips: number[] };
+  /** Boxes (body frame, [min, max]): model parts lying wholly inside one are removed. */
+  strip: [V, V][];
+}
+
+/** Landing gear for a model drawn without any: sprung legs (from `legRoot`, mirrored) and spats to the braked wheels, a tailwheel. */
+export interface FittedGear { legRoot: V; wheelRadius: number; legColor: number; spatColor: number }
+
 export interface AircraftSpec {
   id: string; name: string; kind: AircraftKind; blurb: string; realType: string;
   model: string; credit: string;
@@ -45,6 +66,8 @@ export interface AircraftSpec {
   /** Fuselage, gear and struts: equivalent flat-plate drag area (m²), per axis [side, vertical, forward]. */
   bodyCdA: V;
   engine?: { power: number; staticThrust: number; propPos: V; propRadius: number; rpm: number; maxFlaps: number };
+  prop?: PropVisual;
+  fittedGear?: FittedGear;
   rotor?: { radius: number; hub: V; power: number; rpm: number; maxTilt: number; tailArm: number };
   balloon?: { volume: number; envelopeY: number; radius: number; burner: number };
   gear: GearSpec[];
@@ -88,6 +111,13 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     bodyCdA: [2.6, 3.4, 0.3],
     engine: { power: 119_000, staticThrust: 2700, propPos: [0, 0.05, 2.5], propRadius: 0.95, rpm: 2400, maxFlaps: 30 * deg },
+    // McCauley-style two-blade fixed-pitch: 75 in diameter, ~53 in pitch.
+    prop: {
+      hub: [-0.03, 0.38, 4.53], blades: 2, pitch: 1.35, chord: 0.15,
+      spinner: { base: 4.44, length: 0.42, radius: 0.19, color: 0xe4e4e4 },
+      colors: { front: 0xc9ced3, rear: 0x1e1e1e, tips: [0xf2f2f2, 0xcf3a2e] },
+      strip: [[[-1.4, -0.5, 4.455], [1.4, 1.25, 4.9]]],
+    },
     gear: [
       { pos: [0, -0.75, 1.85], travel: 0.25, type: 'wheel', steer: 12 * deg },
       { pos: [1.25, -0.8, -0.55], travel: 0.18, type: 'wheel', brake: true },
@@ -110,6 +140,13 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     bodyCdA: [4.2, 4.8, 0.62],
     engine: { power: 112_000, staticThrust: 2650, propPos: [0, 0.35, 2.4], propRadius: 0.95, rpm: 2500, maxFlaps: 35 * deg },
+    // Float Cubs swing a fine-pitch climb prop.
+    prop: {
+      hub: [0, 0.615, 5.19], blades: 2, pitch: 1.05, chord: 0.14,
+      spinner: { base: 4.72, length: 0.72, radius: 0.36, color: 0xf0f0f0 },
+      colors: { front: 0xc9ced3, rear: 0x1e1e1e, tips: [0xf2c230] },
+      strip: [[[-2.1, -1.2, 4.7], [2.1, 2.45, 5.5]]],
+    },
     gear: [
       { pos: [1.3, -1.75, 1.6], travel: 0.15, type: 'wheel', steer: 12 * deg },
       { pos: [-1.3, -1.75, 1.6], travel: 0.15, type: 'wheel', steer: 12 * deg },
@@ -138,6 +175,13 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     bodyCdA: [3.6, 4.4, 0.85],
     engine: { power: 164_000, staticThrust: 3500, propPos: [0, 0.1, 2.4], propRadius: 1.25, rpm: 2100, maxFlaps: 0 },
+    // Sensenich-style metal two-blade, 8 ft 2 in.
+    prop: {
+      hub: [0, 0.8, 2.9], blades: 2, pitch: 1.55, chord: 0.16,
+      spinner: { base: 2.6, length: 0.5, radius: 0.25, color: 0xd8dde2 },
+      colors: { front: 0xc9ced3, rear: 0x2a2a2a, tips: [0xf2c230] },
+      strip: [[[-1.6, -0.2, 2.42], [1.6, 1.8, 3.2]]],
+    },
     gear: [
       { pos: [1.05, -1.35, 0.75], travel: 0.18, type: 'wheel', brake: true },
       { pos: [-1.05, -1.35, 0.75], travel: 0.18, type: 'wheel', brake: true },
@@ -150,7 +194,8 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     id: 'kestrel', name: 'Kestrel', kind: 'plane', realType: 'Aerobatic monoplane (Extra 300 class)',
     blurb: 'Light, fast and twitchy: rolls quickly and cruises at 300 km/h. Not for beginners.',
     model: 'sport', credit: '"Aeroplane" by Gilang Romadhan (CC BY 3.0)',
-    modelScale: 1, modelYaw: 0, modelOffset: [0, 0, 0],
+    // The model has no landing gear (it sat on its belly): lift it onto fitted gear, nose at the propeller station.
+    modelScale: 1, modelYaw: 0, modelOffset: [0, 0.72, -0.6],
     mass: 820, inertia: [1350, 2100, 950],
     hull: [{ half: [0.5, 0.55, 1.5], pos: [0, 0.3, 0.6] }, { half: [0.3, 0.3, 1.8], pos: [0, 0.5, -2.5] }, { half: [3.9, 0.08, 0.8], pos: [0, 0.05, 0.4] }, { half: [1.4, 0.05, 0.4], pos: [0, 0.55, -3.5] }],
     surfaces: [
@@ -160,6 +205,14 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     bodyCdA: [2.2, 2.8, 0.22],
     engine: { power: 220_000, staticThrust: 4600, propPos: [0, 0.4, 2.45], propRadius: 1.0, rpm: 2700, maxFlaps: 0 },
+    // MT-style three-blade composite with wide paddle blades.
+    prop: {
+      hub: [0, 0.28, 2.45], blades: 3, pitch: 1.9, chord: 0.17,
+      spinner: { base: 2.31, length: 0.52, radius: 0.3, color: 0xe9c22a },
+      colors: { front: 0x2b2b2b, rear: 0x1a1a1a, tips: [0xf2f2f2, 0xcf3a2e] },
+      strip: [[[-0.9, -0.28, 1.9], [0.9, 1.22, 2.7]]],
+    },
+    fittedGear: { legRoot: [0.28, -0.12, 0.82], wheelRadius: 0.19, legColor: 0x333536, spatColor: 0x2f6b2c },
     gear: [
       { pos: [0.95, -0.95, 0.75], travel: 0.15, type: 'wheel', brake: true },
       { pos: [-0.95, -0.95, 0.75], travel: 0.15, type: 'wheel', brake: true },

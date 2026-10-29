@@ -60,6 +60,7 @@ await page.click('.hangar button[data-fly][data-id="wren"]'); await page.waitFor
 await page.evaluate(() => { const g = window.__game, a = g.flight.aircraft, rw = g.places.find((p) => p.id === 'airfield').runway;
   const x = rw.cx - Math.sin(rw.dir) * (rw.halfLen - 30), z = rw.cz - Math.cos(rw.dir) * (rw.halfLen - 30);
   g.terrainPhysics.update(x, z, 260, 999); a.reset(g.flight.pose(a.spec, { x, z, yaw: rw.dir }, false), rw.dir); g.chase.snap(); });
+await page.waitForTimeout(1300); // the starter cranks the engine until it catches
 await page.keyboard.down('KeyR'); await page.waitForTimeout(2000); await page.keyboard.up('KeyR');
 await page.waitForTimeout(9500);
 await page.keyboard.down('KeyS'); await page.waitForTimeout(1500); await page.keyboard.up('KeyS');

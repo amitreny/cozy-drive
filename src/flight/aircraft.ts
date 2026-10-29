@@ -48,6 +48,8 @@ export class Aircraft {
   private trim = 0; private da = 0; private de = 0; private dr = 0;
   private cyclicF = 0; private cyclicR = 0; private heliHeading = 0; private groundPitch = 0;
   rpm = 0;
+  /** Seconds since the engine was started (a flight begins with the starter cranking it). */
+  private engineTime = 0;
   // Telemetry
   airspeed = 0; groundSpeed = 0; alpha = 0; beta = 0; vs = 0; altitude = 0; agl = 0; heading = 0; pitchAngle = 0; bank = 0;
   onGround = false; onWater = false; stall = 0; thrust = 0;
@@ -97,7 +99,7 @@ export class Aircraft {
     this.body.setTranslation(pos, true);
     this.body.setRotation(restRotation(this.spec, yaw), true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true); this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    this.throttle = 0; this.collective = 0; this.trim = 0; this.crashed = null; this.hasLastV = false;
+    this.throttle = 0; this.collective = 0; this.trim = 0; this.crashed = null; this.hasLastV = false; this.rpm = 0; this.engineTime = 0;
     if (this.spec.kind === 'balloon') this.envelopeTemp = this.equilibriumTemp() - 3;
     for (const g of this.gear) { g.anchored = false; g.comp = g.prev = 0; }
     this.capture(); this.capture();
@@ -336,17 +338,23 @@ export class Aircraft {
 
     // ---- Propeller: power-limited thrust, capped by static thrust; slipstream over the tail. ----
     const vf = Math.max(0, dot(s.air, s.fw));
+    // Engine speed: the starter turns it over (in uneven lurches, cylinder by cylinder) until it catches, then it
+    // runs up to where throttle and airspeed put it, with the propeller's inertia (quicker up than down).
+    this.engineTime += dt;
+    const cranking = this.engineTime < 1.1, power = cranking ? 0 : this.throttle;
+    const rpmTarget = cranking ? 150 * (1 + 0.4 * Math.sin(this.engineTime * 30))
+      : eng.rpm * (0.3 + 0.7 * Math.sqrt(this.throttle)) * (1 + Math.min(0.15, vf / 400)) + 350 * Math.exp(-(this.engineTime - 1.1) * 3);
+    this.rpm += (rpmTarget - this.rpm) * Math.min(1, dt * (cranking ? 12 : rpmTarget > this.rpm ? 2.8 : 1.6));
     // A windmilling propeller at idle is a big drag brake: it is why a light aircraft glides ~9:1, not 12:1.
     // A fixed-pitch prop loses thrust as speed builds (static thrust falls off), and is power-limited at speed.
-    const T = this.throttle * Math.min(eng.staticThrust * (1 - vf / 120), (0.8 * eng.power) / Math.max(vf, 1)) - (1 - this.throttle) ** 2 * 0.5 * rho * vf * vf * 0.085 * Math.PI * eng.propRadius ** 2;
+    const T = power * Math.min(eng.staticThrust * (1 - vf / 120), (0.8 * eng.power) / Math.max(vf, 1)) - (1 - power) ** 2 * 0.5 * rho * vf * vf * 0.085 * Math.PI * eng.propRadius ** 2;
     this.thrust = T;
     const disc = Math.PI * eng.propRadius ** 2;
     const slip = Math.sqrt(vf * vf + (2 * Math.max(0, T)) / (rho * disc)) - vf;
-    this.rpm = eng.rpm * (0.3 + 0.7 * Math.sqrt(this.throttle)) * (1 + Math.min(0.15, vf / 400));
     rotate(s.a, this.curRotOf(), set(s.b, ...eng.propPos));
     body.applyImpulseAtPoint({ x: s.fw.x * T * dt, y: s.fw.y * T * dt, z: s.fw.z * T * dt }, { x: s.p.x + s.a.x, y: s.p.y + s.a.y, z: s.p.z + s.a.z }, true);
     // Engine torque reaction rolls the aircraft a little to the left at high power and low speed.
-    const torque = -(this.throttle * eng.power) / ((eng.rpm * 2 * Math.PI) / 60) * 0.25;
+    const torque = -(power * eng.power) / ((eng.rpm * 2 * Math.PI) / 60) * 0.25;
     body.applyTorqueImpulse({ x: s.fw.x * torque * dt, y: s.fw.y * torque * dt, z: s.fw.z * torque * dt }, true);
 
     // ---- Lifting surfaces ----
