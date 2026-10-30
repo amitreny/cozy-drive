@@ -17,9 +17,12 @@
 | Aeroplane | Gilang Romadhan | CC BY 3.0 | https://poly.pizza/m/9VeIc0cybp4 | The sport plane, `public/models/aircraft/sport.glb` |
 | Helicopter | Poly by Google | CC BY 3.0 | https://poly.pizza/m/cTzINMr0WdS | The helicopter, `public/models/aircraft/helicopter.glb` |
 | Hot air balloon | Poly by Google | CC BY 3.0 | https://poly.pizza/m/7Fej0Jd3_Di | The balloon, `public/models/aircraft/balloon.glb` |
+| Twin turboprop rigged airplane | mfonasd | CC0 | https://opengameart.org/content/twin-turboprop-rigged-airplane-low-poly | The Heron airliner, `public/models/aircraft/turboprop.glb` (converted from the .blend by `tools/blend2glb.mjs`) |
 | Package | Quaternius | CC0 1.0 | https://poly.pizza/m/mWkgWyrCfM | Delivery parcels, `public/models/cargo/package.glb` |
 | Pallet | Quaternius | CC0 1.0 | https://poly.pizza/m/MwOFAOgOhg | Cargo pallets, `public/models/cargo/pallet.glb` |
 
 CC0 needs no attribution, but credit is given gladly. The original licence text ships next to the Kenney models.
+
+**CC0** (https://creativecommons.org/publicdomain/zero/1.0/) needs no attribution, but we credit it anyway. The turboprop is converted from Blender with its propellers left out (the game draws working ones), its flaps split off so they move, scaled to the Dash 8's span and repainted in the Heron's livery.
 
 **CC BY 3.0** (https://creativecommons.org/licenses/by/3.0/) needs attribution: the authors above are credited here and in the game's Hangar panel. The aircraft and cars are used as published, except that the game rescales them to real-world size, adds spinning propeller and rotor discs, repaints car bodies in the player's chosen colour and replaces window glass with its own. Car names in the game are our own; the models' real makes are named here only to credit them.

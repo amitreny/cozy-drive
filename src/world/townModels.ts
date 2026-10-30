@@ -44,7 +44,7 @@ export async function loadTownModels(): Promise<void> {
   await Promise.all([
     loadKit(loader, 'kenney-suburban', [...sub, 'fence', 'fence-low', 'planter', 'driveway-long', 'path-stones-short'], ['variation-a', 'variation-b', 'variation-c']),
     loadKit(loader, 'kenney-commercial', [...com, 'detail-awning-wide', 'detail-awning', 'detail-parasol-a', 'detail-parasol-b'], ['variation-a', 'variation-b']),
-    ...['trainer', 'seaplane', 'biplane', 'sport', 'helicopter', 'balloon'].map(async (f) => { scenes.set(`aircraft/${f}`, (await loader.loadAsync(`${BASE}aircraft/${f}.glb`)).scene); }),
+    ...['trainer', 'seaplane', 'biplane', 'sport', 'helicopter', 'balloon', 'turboprop'].map(async (f) => { scenes.set(`aircraft/${f}`, (await loader.loadAsync(`${BASE}aircraft/${f}.glb`)).scene); }),
     ...['package', 'pallet'].map(async (f) => { const s = (await loader.loadAsync(`${BASE}cargo/${f}.glb`)).scene; scenes.set(`cargo/${f}`, s); parts.set(`cargo/${f}`, flatten(s)); }),
   ]);
 }

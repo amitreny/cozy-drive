@@ -4,7 +4,7 @@
 
 ## Aircraft (`src/flight/`)
 
-Six aircraft, each modelled on a real type. The CC BY 3.0 models are credited in CREDITS.md and in the hangar.
+Seven aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are credited in CREDITS.md and in the hangar. The Heron's model is a CC0 An-24-style twin turboprop, converted from its .blend by `tools/blend2glb.mjs` (a small .blend reader in `tools/blendfile.mjs`).
 
 | Aircraft | Real type | Notes |
 |---|---|---|
@@ -14,6 +14,13 @@ Six aircraft, each modelled on a real type. The CC BY 3.0 models are credited in
 | Kestrel | Extra 300-class aerobatic | taildragger, full-span ailerons |
 | Hummingbird | Bell 206 class | skids |
 | Dandelion | 2,200 m³ hot-air balloon | basket |
+| Heron | Dash 8-100-class regional turboprop | 14 t, twin turboprops, needs an 800 m runway |
+
+**The Heron is a regional turboprop rather than a jet** because a narrow-body jet needs about 1.8–2 km of runway and the island's longest is 900 m. It flies from Island Airfield on its real numbers.
+- Two 1,490 kW engines with 3.96 m four-blade constant-speed propellers. Static thrust fades more slowly with speed than a fixed-pitch prop's.
+- The turbines take 2.5 s to light (no thrust until then), and their power lags the lever. The HUD shows torque.
+- The centre of gravity sits near the wing's quarter chord, as on an airliner, so the tail does the stabilising.
+- The relaxed assist commands an airliner's pitch and roll rates (`handling`). On the ground, its attitude hold has an integral term so the heavy tail can rotate the aircraft.
 
 **Fixed-wing physics is built from the airframe, not from a table of stability derivatives.**
 - Each wing has four panels: inner panels with flaps and outer panels with ailerons. With the tailplane and fin, each panel computes its own local airflow, including the body's rotation, plus wind and propeller slipstream on the tail.
@@ -31,7 +38,7 @@ Six aircraft, each modelled on a real type. The CC BY 3.0 models are credited in
 - Envelope temperature follows a heat balance: a 3 MW burner against losses, about a 5-minute time constant.
 - Buoyancy uses (ρ_air − ρ_hot)·V·g.
 - The envelope is a sphere of drag in the wind. Pitch and roll are locked so the basket hangs plumb.
-- The wind veers about 70° and doubles in strength by 600 m, so altitude is the steering.
+- The prevailing surface wind is a sea breeze along the runways (blowing towards 320°, drifting up to about 30° through the day), so take-offs are mostly into wind. It veers about 70° and doubles in strength by 600 m, so altitude is the steering.
 
 **Assists change what the stick commands, never the physics.**
 - **Relaxed:**
@@ -49,12 +56,13 @@ Six aircraft, each modelled on a real type. The CC BY 3.0 models are credited in
 | Puffin | floats at a sensible draft; off the water in under 330 m |
 | Hummingbird | hovers hands-off and climbs |
 | Dandelion | holds level near its equilibrium temperature, climbs on the burner, sinks on the vent |
+| Heron | no thrust until the turbines light; with a notch of flap, lift-off at 46–57 m/s after 350–650 m; 430–490 km/h low down; clean stall 44–52 m/s; brakes to a stop from 45 m/s in under 450 m; hands-off stable, airliner roll and pitch rates; offered only at runways of 800 m or more |
 | All | a crash is detected |
 
 ## Airports (`src/world/airports.ts`, `airportsRender.ts`, `network.ts`)
 
 **The bases:**
-- **Island Airfield:** a 900 m asphalt runway with markings and edge lights, apron, taxiway, three hangars, a tower, an office and a windsock.
+- **Island Airfield:** a 900 m asphalt runway with markings and edge lights, a parallel taxiway the length of the runway (joined to it at both ends and to the apron in the middle, with rounded junctions, centrelines that curve through the turns and onto the runway centreline, hold-short lines and blue edge lights), apron, three hangars, a tower, an office and a windsock.
 - **Dune Strip:** 550 m of grass with edge boards.
 - **Helipads:** Hearthwick, and the summit pad.
 - **Piers:** Harbour and Northshore, both on the open sea. The lake is too small for floatplanes to get off safely (about 300 m of water), so it has no pier, but you can land on it.
@@ -62,7 +70,7 @@ Six aircraft, each modelled on a real type. The CC BY 3.0 models are credited in
 **Siting and access:**
 - Runway sites were picked by a search for the least earthwork with clear 1:20 approaches. They are levelled onto a fitted plane with at most 0.8% slope.
 - Each base gets an access road to the nearest road.
-- You take an aircraft from the hangar (E). Land anywhere, stop and press E to park. At a base, your car is in the car park; elsewhere the ground crew drives it to the nearest road. A crash brings you back to where you took off.
+- You take an aircraft from the hangar (E). Land anywhere, stop and press E to park. At a base, your car is in the car park; elsewhere the ground crew drives it to the nearest road. A crash brings you back to your base: an aeroplane is lined up at the start of the runway, into the wind, with the engine running and take-off flap set; anything else returns to where it took off.
 
 ## Homes and businesses (`src/world/lots.ts`, `town.ts`)
 

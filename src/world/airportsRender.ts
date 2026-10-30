@@ -1,6 +1,6 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { along, local, type AirPlace, type Rect } from './airports';
+import { along, inRect, local, type AirPlace, type Rect } from './airports';
 import { S } from './surfaces';
 import { heightAt, waterLevelAt, type WorldData } from './terrainGen';
 
@@ -35,6 +35,25 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
     const n = g.attributes.normal; if (n.getY(0) < 0) { g.setIndex(idx.map((v, i) => idx[i - (i % 3) + (2 - (i % 3))] ?? v)); g.computeVertexNormals(); }
     const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m);
   };
+  /** A line of paint `width` wide along a polyline of (x, z) points, following the ground. */
+  const path = (pts: [number, number][], width: number, mat: THREE.Material, lift = 0.05) => {
+    const dense: [number, number][] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, z0] = pts[i], [x1, z1] = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 3));
+      for (let k = 0; k < n; k++) dense.push([x0 + ((x1 - x0) * k) / n, z0 + ((z1 - z0) * k) / n]);
+    }
+    dense.push(pts[pts.length - 1]);
+    const pos: number[] = [], idx: number[] = [];
+    dense.forEach(([x, z], i) => {
+      const [ax, az] = dense[Math.max(0, i - 1)], [bx, bz] = dense[Math.min(dense.length - 1, i + 1)], l = Math.hypot(bx - ax, bz - az) || 1;
+      const nx = (-(bz - az) / l) * (width / 2), nz = ((bx - ax) / l) * (width / 2);
+      for (const sgn of [1, -1]) { const px = x + sgn * nx, pz = z + sgn * nz; pos.push(px, heightAt(w, px, pz) + lift, pz); }
+      if (i < dense.length - 1) { const k = i * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
+    });
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    if (g.attributes.normal.getY(0) < 0) { g.setIndex(idx.map((v, i) => idx[i - (i % 3) + (2 - (i % 3))] ?? v)); g.computeVertexNormals(); }
+    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m);
+  };
   const box = (cx: number, cz: number, yaw: number, wx: number, hy: number, dz: number, color: number, y0?: number, collide = true) => {
     const y = y0 ?? heightAt(w, cx, cz);
     const m = new THREE.Mesh(new THREE.BoxGeometry(wx, hy, dz), new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true }));
@@ -42,7 +61,7 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
     if (collide) { const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw); physics.createCollider(R.ColliderDesc.cuboid(wx / 2, hy / 2, dz / 2).setTranslation(cx, y + hy / 2, cz).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })); }
     return m;
   };
-  const lights: THREE.Vector3[] = [];
+  const lights: THREE.Vector3[] = [], taxiLights: THREE.Vector3[] = [];
   const socks: { pivot: THREE.Group; sock: THREE.Group }[] = [];
 
   for (const ap of places) {
@@ -64,10 +83,26 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
         mesh.rotation.x = -Math.PI / 2; mesh.rotation.z = rw.dir + (end < 0 ? 0 : Math.PI);
         mesh.position.set(x, heightAt(w, x, z) + 0.07, z); group.add(mesh);
       });
-      // Taxiway centreline in yellow, and edge lights along the runway (they glow at night).
-      const tx = ap.paved[1];
-      if (tx) stripe(tx, -tx.halfLen, tx.halfLen, 0, 0.35, yellow, 0.06);
+      // Taxiway centrelines in yellow, curving through the turns, and edge lights along the runway (they glow at night).
+      for (const pts of ap.taxiLines) path(pts, 0.35, yellow, 0.06);
+      const side = Math.sign(local(rw, ap.spawn.x, ap.spawn.z)[1] || 1);
+      for (const tx of ap.taxiways) {
+        if (Math.abs(Math.sin(tx.dir - rw.dir)) < 0.5) continue; // the parallel taxiway never meets the runway
+        // Hold-short line where each taxiway meets the runway, across its width: dashed bars on the runway side,
+        // solid on the side where you hold.
+        const [ta] = local(rw, tx.cx, tx.cz), hw = tx.halfWid;
+        for (const [k, dashed] of [[4, true], [4.6, true], [5.4, false], [6, false]] as const) {
+          if (!dashed) stripe(rw, ta - hw, ta + hw, side * (W + k), 0.25, yellow, 0.06);
+          else for (let a = ta - hw; a < ta + hw - 0.5; a += 2) stripe(rw, a, Math.min(a + 1.2, ta + hw), side * (W + k), 0.25, yellow, 0.06);
+        }
+      }
       for (let a = -L; a <= L; a += 60) for (const sgn of [-1, 1]) { const [x, z] = along(rw, a, sgn * (W + 1.5)); lights.push(new THREE.Vector3(x, heightAt(w, x, z) + 0.35, z)); }
+      // Blue edge lights along the taxiways, left out where another paved area joins.
+      for (const tx of ap.taxiways) for (let a = -tx.halfLen; a <= tx.halfLen; a += 30) for (const sgn of [-1, 1]) {
+        const [x, z] = along(tx, a, sgn * (tx.halfWid + 0.8));
+        if (ap.paved.some((p) => p !== tx && inRect(p, x, z, 1)) || inRect(rw, x, z, 1)) continue;
+        taxiLights.push(new THREE.Vector3(x, heightAt(w, x, z) + 0.3, z));
+      }
       // Windsock beside the runway's middle.
       const [sx, sz] = along(rw, 40, -(W + 22) * Math.sign(local(rw, ap.spawn.x, ap.spawn.z)[1] || 1));
       const sy = heightAt(w, sx, sz), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 6, 6), new THREE.MeshStandardMaterial({ color: 0xdedad2 }));
@@ -141,6 +176,10 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
   const lm = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 8, 6), lightMat, lights.length);
   const m4 = new THREE.Matrix4(); lights.forEach((p, i) => lm.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
   group.add(lm);
+  const taxiMat = new THREE.MeshStandardMaterial({ color: 0x9fb8ff, emissive: 0x2f5bff, emissiveIntensity: 0 });
+  const tm = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 8, 6), taxiMat, taxiLights.length);
+  taxiLights.forEach((p, i) => tm.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
+  group.add(tm);
 
   let t = 0;
   return {
@@ -154,6 +193,7 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
         s.sock.rotation.x = Math.max(0, (1 - Math.min(1, sp / 7.7)) * 70 * deg) + Math.sin(t * 3.1) * 0.05;
       }
       lightMat.emissiveIntensity = night * 3.5;
+      taxiMat.emissiveIntensity = night * 4.5;
     },
   };
 }

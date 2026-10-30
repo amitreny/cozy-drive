@@ -67,7 +67,7 @@ export class Hud {
     const lever = s.kind === 'plane' ? a.throttle : s.kind === 'heli' ? a.collective : (a.envelopeTemp - 288) / 110;
     this.rpm.style.width = `${Math.min(100, Math.max(0, lever * 100))}%`;
     let line2: string;
-    if (s.kind === 'plane') line2 = `Throttle <b>${Math.round(a.throttle * 100)}%</b>${s.engine?.maxFlaps ? ` · flaps <b>${Math.round(a.flaps * (s.engine.maxFlaps * 180 / Math.PI))}°</b>` : ''}`;
+    if (s.kind === 'plane') line2 = `Throttle <b>${Math.round(a.throttle * 100)}%</b>${s.engine?.turbine ? ` · torque <b>${Math.round(a.power * 100)}%</b>` : ''}${s.engine?.maxFlaps ? ` · flaps <b>${Math.round(a.flaps * (s.engine.maxFlaps * 180 / Math.PI))}°</b>` : ''}`;
     else if (s.kind === 'heli') line2 = `Collective <b>${Math.round(a.collective * 100)}%</b>`;
     else line2 = `Envelope <b>${Math.round(a.envelopeTemp - 273)} °C</b>${a.burner ? ' · 🔥 burner' : a.vent ? ' · venting' : ''}`;
     const wdir = Math.round(((360 - (Math.atan2(-wind.x, -wind.z) * 180) / Math.PI) % 360 + 360) % 360), wspd = Math.round(Math.hypot(wind.x, wind.z) * 3.6);

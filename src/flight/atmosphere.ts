@@ -6,16 +6,22 @@ export const G = 9.81;
 /** ISA density at altitude h (m). */
 export const density = (h: number): number => RHO0 * Math.pow(Math.max(0.2, 1 - 2.2558e-5 * h), 4.2559);
 
+/**
+ * The island's prevailing surface wind blows towards 320° (a sea breeze from the south-east), which is why its
+ * runways were laid out on 140–150°/320–330°: most days you take off into wind, with a little crosswind at most.
+ */
+const PREVAILING = -40 * (Math.PI / 180);
+
 export class Wind {
-  /** Direction the surface wind blows towards, radians from +z (north). Drifts slowly through the day. */
-  heading = 1.2;
+  /** Direction the surface wind blows towards, radians from +z (north). Drifts slowly (up to ~30°) through the day. */
+  heading = PREVAILING;
   /** Surface wind speed, m/s. */
   speed = 3;
   private t = 0;
 
   update(dt: number): void {
     this.t += dt;
-    this.heading = 1.2 + 0.6 * Math.sin(this.t * 0.0021) + 0.25 * Math.sin(this.t * 0.0007 + 1);
+    this.heading = PREVAILING + 0.35 * Math.sin(this.t * 0.0021) + 0.15 * Math.sin(this.t * 0.0007 + 1);
     this.speed = 3 + 1.5 * Math.sin(this.t * 0.0013 + 2);
   }
 

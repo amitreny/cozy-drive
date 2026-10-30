@@ -1,12 +1,12 @@
 import { Perlin2 } from './noise';
-import { AIRPORTS, along, local } from './airports';
+import { AIRPORTS, along, inFillet, local, onPaving, type Rect } from './airports';
 import { placeLots, type Lot } from './lots';
 import { NETWORK } from './network';
 import { limitGrade, MAX_GRADE, pinJunctions, sampleRoad, segDist, SMOOTHING, smoothProfile, type RoadPath } from './roads';
 import { S, type SurfaceId } from './surfaces';
 
 /** Bump when generation changes so cached worlds are rebuilt. */
-export const WORLD_VERSION = 10;
+export const WORLD_VERSION = 12;
 
 export interface Water { x: number; z: number; r: number; level: number }
 export interface WorldData {
@@ -234,10 +234,14 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
   });
   // Runways, aprons, taxiways and helipads.
   for (const ap of AIRPORTS) {
-    const paint = (r: { cx: number; cz: number; dir: number; halfLen: number; halfWid: number }, s: SurfaceId) =>
-      forCells(n, cell, half, r.cx, r.cz, Math.hypot(r.halfLen, r.halfWid) + 2, (i, x, z) => { const [a, c] = local(r, x, z); if (Math.abs(a) <= r.halfLen && Math.abs(c) <= r.halfWid) surface[i] = s; });
+    const paint = (r: Rect, s: SurfaceId) =>
+      forCells(n, cell, half, r.cx, r.cz, Math.hypot(r.halfLen, r.halfWid) + 2, (i, x, z) => { if (onPaving(r, x, z)) surface[i] = s; });
     if (ap.runway) paint(ap.runway, ap.runway.surface);
     for (const p of ap.paved) paint(p, S.Asphalt);
+    for (const f of ap.fillets) {
+      const [x0, z0] = along(f.frame, f.a + (f.ua * f.r) / 2, f.c + (f.vc * f.r) / 2);
+      forCells(n, cell, half, x0, z0, f.r, (i, x, z) => { if (inFillet(f, x, z)) surface[i] = S.Asphalt; });
+    }
   }
   const waters: Water[] = [{ ...LAKE, level: levels.get(LAKE)! }];
   return { size, n, cell, heights, surface, roads, waters, lots, clear, spawn: { x: PLAZA.x + 4, z: PLAZA.z - 12, yaw: Math.PI } };

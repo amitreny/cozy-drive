@@ -23,6 +23,8 @@ const isWing = (x: SurfaceSpec): boolean => x.orient === 'h' && x.control !== 'e
 const WATER_RHO = 1000;
 /** Control throws and servo speed (rad, rad/s). */
 const MAX_AILERON = 20 * deg, MAX_ELEVATOR = 24 * deg, MAX_RUDDER = 25 * deg, SERVO = 2.2;
+/** Full wheel braking, as a share of the load on a braked wheel. */
+const BRAKE = 0.55;
 
 /** Nose-up angle a taildragger rests at on its three wheels (0 for tricycle gear, skids and baskets). */
 export function restPitch(spec: AircraftSpec): number {
@@ -46,10 +48,14 @@ export class Aircraft {
   // Levers and state
   throttle = 0; flaps = 0; flapsTarget = 0; collective = 0; envelopeTemp = T0 + 40; burner = false; vent = false;
   private trim = 0; private da = 0; private de = 0; private dr = 0;
-  private cyclicF = 0; private cyclicR = 0; private heliHeading = 0; private groundPitch = 0;
+  private cyclicF = 0; private cyclicR = 0; private heliHeading = 0; private groundPitch = 0; private groundTrim = 0; private rollTrim = 0;
   rpm = 0;
   /** Seconds since the engine was started (a flight begins with the starter cranking it). */
   private engineTime = 0;
+  /** Share of the brakes the relaxed assist lets through (1 = all). */
+  private brakeEase = 1; private brakePitch = 0;
+  /** Power the engine is making, 0..1 (lags the throttle in a turbine). */
+  power = 0;
   // Telemetry
   airspeed = 0; groundSpeed = 0; alpha = 0; beta = 0; vs = 0; altitude = 0; agl = 0; heading = 0; pitchAngle = 0; bank = 0;
   onGround = false; onWater = false; stall = 0; thrust = 0;
@@ -82,24 +88,34 @@ export class Aircraft {
     this.capture(); this.capture();
   }
 
-  /** Static load share per gear point (from where they sit fore and aft of the CG), springs sized to 40 % travel. */
+  /**
+   * Static load share per gear point (from where they sit fore and aft of the CG), springs sized to 40 % travel.
+   * The front gear must also take the weight braking throws onto it (deceleration × CG height / wheelbase): its
+   * spring is stiff enough to carry that at 85 % travel, so a nosewheel doesn't bottom out and dip the nose.
+   */
   private setupGear(): void {
     const g = this.spec.gear, front = g.filter((x) => x.pos[2] > 0), rear = g.filter((x) => x.pos[2] <= 0);
     const zf = front.reduce((s, x) => s + x.pos[2], 0) / (front.length || 1), zr = rear.reduce((s, x) => s + x.pos[2], 0) / (rear.length || 1);
     const frontShare = front.length && rear.length ? -zr / (zf - zr) : front.length ? 1 : 0;
-    const W = this.spec.mass * G;
+    const W = this.spec.mass * G, cgHeight = -Math.min(...g.map((x) => x.pos[1]));
+    const transfer = front.length && rear.length ? (BRAKE * W * cgHeight) / (zf - zr) / front.length : 0;
     this.gear = g.map((spec) => {
       const share = spec.pos[2] > 0 ? frontShare / front.length : (1 - frontShare) / rear.length;
-      const load = Math.max(0.05, share) * W, k = load / (0.4 * spec.travel), m = load / G;
+      const load = Math.max(0.05, share) * W, m = load / G;
+      const k = Math.max(load / (0.4 * spec.travel), spec.pos[2] > 0 ? (load + transfer) / (0.85 * spec.travel) : 0);
       return { spec, share, k, c: 2 * 0.65 * Math.sqrt(k * m), comp: 0, prev: 0, contact: false, point: v3(), surface: S.Grass, inWater: false, load: 0, anchored: false, anchor: v3() };
     });
   }
 
-  reset(pos: V3, yaw: number): void {
+  /** Put it at rest at `pos`, heading `yaw`, levers closed. `running`: the engine is already started, ticking over. */
+  reset(pos: V3, yaw: number, running = false): void {
     this.body.setTranslation(pos, true);
     this.body.setRotation(restRotation(this.spec, yaw), true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true); this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    this.throttle = 0; this.collective = 0; this.trim = 0; this.crashed = null; this.hasLastV = false; this.rpm = 0; this.engineTime = 0;
+    this.throttle = 0; this.collective = 0; this.trim = 0; this.rollTrim = 0; this.crashed = null; this.hasLastV = false; this.power = 0;
+    this.groundPitch = restPitch(this.spec); this.groundTrim = 0;
+    const eng = this.spec.engine;
+    this.engineTime = running ? 60 : 0; this.rpm = running && eng ? eng.rpm * (eng.idle ?? 0.3) : 0;
     if (this.spec.kind === 'balloon') this.envelopeTemp = this.equilibriumTemp() - 3;
     for (const g of this.gear) { g.anchored = false; g.comp = g.prev = 0; }
     this.capture(); this.capture();
@@ -148,6 +164,11 @@ export class Aircraft {
     }
     set(this.lastV, s.v.x, s.v.y, s.v.z); this.hasLastV = true;
 
+    // Relaxed: ease the brakes as the nose goes down from where it was when you started braking, as a pilot
+    // would, so hard braking can't stand a taildragger on its nose (or bury a nosewheel).
+    if (input.brake < 0.05 || !this.onGround) this.brakePitch = this.pitchAngle;
+    this.brakeEase = assist === 'relaxed' && spec.kind === 'plane' && this.onGround
+      ? clamp(1 - (this.brakePitch - this.pitchAngle - 1.5 * deg) / (3 * deg), 0.2, 1) : 1;
     this.stepGear(dt, input, rho);
     if (spec.floats) this.stepFloats(dt, water);
     if (spec.kind === 'plane') this.stepPlane(dt, input, assist, rho);
@@ -203,7 +224,7 @@ export class Aircraft {
       let fl = 0, fs = 0;
       if (gs.type === 'wheel') {
         const mu = 0.8 * surf.grip / 0.62 * 0.62; // aircraft tyres: about road-tyre grip
-        const brake = gs.brake ? input.brake * 0.55 : 0;
+        const brake = gs.brake ? input.brake * BRAKE * this.brakeEase : 0;
         const roll = (surf.crr * 1.1 + brake) * g.load;
         fl = -Math.sign(vl) * Math.min(roll, (Math.abs(vl) * mShare) / dt);
         const slip = Math.atan2(vs, Math.max(Math.abs(vl), 1.5));
@@ -302,14 +323,19 @@ export class Aircraft {
     const fast = clamp((this.airspeed - 8) / 20, 0, 1);
     if (assist === 'relaxed' && !this.onGround) {
       // Rate command, attitude hold: release the stick and the aircraft holds its attitude; wings come back level.
-      let qT = input.pitch * 0.45;
+      const pitchRate = spec.handling?.pitchRate ?? 0.45, rollRate = spec.handling?.rollRate ?? 1.2;
+      let qT = input.pitch * pitchRate;
       if (this.alpha > stallA - 3 * deg) qT = Math.min(qT, -(this.alpha - (stallA - 3 * deg)) * 4); // stall protection
-      const pT = input.roll !== 0 ? input.roll * 1.2 : clamp(-this.bank * 0.9, -0.5, 0.5);
+      const level = (0.5 * rollRate) / 1.2;
+      const pT = input.roll !== 0 ? input.roll * rollRate : clamp(-this.bank * 0.9, -level, level);
       const bankLimit = 55 * deg;
       const pT2 = Math.abs(this.bank) > bankLimit && Math.sign(pT) === Math.sign(this.bank) ? 0 : pT;
       this.trim = clamp(this.trim + (qT - qr) * dt * 1.5, -1, 1);
       pitchCmd = clamp(this.trim + (qT - qr) * 2.2, -1, 1);
-      rollCmd = clamp((pT2 - p) * 1.6, -1, 1);
+      // Aileron trim (the integral part) cancels the engine's torque roll: without it the wings settle a little
+      // left-wing-down and the aircraft slowly turns left. Held while you're rolling.
+      if (input.roll === 0) this.rollTrim = clamp(this.rollTrim + (pT2 - p) * dt * 1.2, -0.3, 0.3);
+      rollCmd = clamp(this.rollTrim + (pT2 - p) * 1.6, -1, 1);
       yawCmd = clamp(input.yaw - this.beta * 4 - r * 0.6 * fast + rollCmd * 0.15, -1, 1); // turn coordinator + yaw damper
     } else if (assist === 'relaxed') {
       // On the runway or the water: the stick moves a held attitude (up to ~10° nose-up for the rotation, so no tail
@@ -317,7 +343,10 @@ export class Aircraft {
       // back level as you slow to taxi speed after landing (and a taildragger lifts its tail as speed builds).
       this.groundPitch = clamp(this.groundPitch + input.pitch * 9 * deg * dt, -2 * deg, 10 * deg);
       if (this.airspeed < 14 && input.pitch <= 0) this.groundPitch += (0 - this.groundPitch) * Math.min(1, dt * 1.5);
-      pitchCmd = clamp((this.groundPitch - this.pitchAngle) * 5 - qr * 1.2, -1, 1);
+      // The integral part lets a heavy airliner's tail lever its nose up as surely as a trainer's.
+      const err = this.groundPitch - this.pitchAngle;
+      this.groundTrim = this.airspeed > 14 ? clamp(this.groundTrim + err * dt * 4, -1, 1) : this.groundTrim * (1 - Math.min(1, dt * 2));
+      pitchCmd = clamp(this.groundTrim + err * 5 - qr * 1.2, -1, 1);
       rollCmd = clamp(-this.bank * 2 - p * 0.5 + input.roll * 0.3, -1, 1);
       yawCmd = input.yaw;
     } else if (assist === 'standard' && !this.onGround) {
@@ -330,7 +359,7 @@ export class Aircraft {
       pitchCmd = clamp(input.pitch + (this.onGround ? 0 : this.trim), -1, 1);
       rollCmd = input.roll; yawCmd = input.yaw;
     }
-    if (this.onGround) this.trim *= 1 - dt; else this.groundPitch = clamp(this.pitchAngle, -2 * deg, 10 * deg);
+    if (this.onGround) { this.trim *= 1 - dt; this.rollTrim = 0; } else { this.groundPitch = clamp(this.pitchAngle, -2 * deg, 10 * deg); this.groundTrim = 0; }
     const servo = (cur: number, want: number) => cur + clamp(want - cur, -SERVO * dt, SERVO * dt);
     this.da = servo(this.da, rollCmd * MAX_AILERON);
     this.de = servo(this.de, -pitchCmd * MAX_ELEVATOR);
@@ -338,18 +367,23 @@ export class Aircraft {
 
     // ---- Propeller: power-limited thrust, capped by static thrust; slipstream over the tail. ----
     const vf = Math.max(0, dot(s.air, s.fw));
-    // Engine speed: the starter turns it over (in uneven lurches, cylinder by cylinder) until it catches, then it
-    // runs up to where throttle and airspeed put it, with the propeller's inertia (quicker up than down).
+    // Engine speed: a piston engine's starter turns it over (in uneven lurches, cylinder by cylinder) until it
+    // catches; a turbine winds up smoothly and takes longer to light. Then the propeller runs up to where throttle
+    // and airspeed put it, with its inertia (quicker up than down; a turbine slower still).
     this.engineTime += dt;
-    const cranking = this.engineTime < 1.1, power = cranking ? 0 : this.throttle;
-    const rpmTarget = cranking ? 150 * (1 + 0.4 * Math.sin(this.engineTime * 30))
-      : eng.rpm * (0.3 + 0.7 * Math.sqrt(this.throttle)) * (1 + Math.min(0.15, vf / 400)) + 350 * Math.exp(-(this.engineTime - 1.1) * 3);
-    this.rpm += (rpmTarget - this.rpm) * Math.min(1, dt * (cranking ? 12 : rpmTarget > this.rpm ? 2.8 : 1.6));
+    const turbine = !!eng.turbine, lightOff = turbine ? 2.5 : 1.1, cranking = this.engineTime < lightOff, idle = eng.idle ?? 0.3;
+    const rpmTarget = cranking ? (turbine ? 300 * this.engineTime / lightOff : 150 * (1 + 0.4 * Math.sin(this.engineTime * 30)))
+      : eng.rpm * (idle + (1 - idle) * Math.sqrt(this.throttle)) * (1 + Math.min(0.15, vf / 400)) + (turbine ? 0 : 350 * Math.exp(-(this.engineTime - lightOff) * 3));
+    this.rpm += (rpmTarget - this.rpm) * Math.min(1, dt * (cranking ? 12 : (rpmTarget > this.rpm ? 2.8 : 1.6) * (turbine ? 0.45 : 1)));
+    // Power follows the lever at once in a piston engine; a turbine's lags it by a second or two.
+    const want = cranking ? 0 : this.throttle;
+    this.power = turbine ? this.power + (want - this.power) * Math.min(1, dt * 0.8) : want;
+    const power = this.power, props = eng.props ?? 1;
     // A windmilling propeller at idle is a big drag brake: it is why a light aircraft glides ~9:1, not 12:1.
     // A fixed-pitch prop loses thrust as speed builds (static thrust falls off), and is power-limited at speed.
-    const T = power * Math.min(eng.staticThrust * (1 - vf / 120), (0.8 * eng.power) / Math.max(vf, 1)) - (1 - power) ** 2 * 0.5 * rho * vf * vf * 0.085 * Math.PI * eng.propRadius ** 2;
+    const disc = props * Math.PI * eng.propRadius ** 2;
+    const T = power * Math.min(eng.staticThrust * (1 - vf / (eng.thrustFade ?? 120)), (0.8 * eng.power) / Math.max(vf, 1)) - (1 - power) ** 2 * 0.5 * rho * vf * vf * 0.085 * disc;
     this.thrust = T;
-    const disc = Math.PI * eng.propRadius ** 2;
     const slip = Math.sqrt(vf * vf + (2 * Math.max(0, T)) / (rho * disc)) - vf;
     rotate(s.a, this.curRotOf(), set(s.b, ...eng.propPos));
     body.applyImpulseAtPoint({ x: s.fw.x * T * dt, y: s.fw.y * T * dt, z: s.fw.z * T * dt }, { x: s.p.x + s.a.x, y: s.p.y + s.a.y, z: s.p.z + s.a.z }, true);

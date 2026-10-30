@@ -97,7 +97,9 @@ export class AircraftVisual {
   private props: { obj: THREE.Object3D; axis: THREE.Vector3; spin: number }[] = [];
   private discs: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial }[] = [];
   private flame: THREE.Mesh | null = null;
-  private propeller: Propeller | null = null;
+  private propellers: Propeller[] = [];
+  /** Flaps split out of the model: each turns down about its hinge (along the wing, at its leading edge). */
+  private flaps: THREE.Object3D[] = [];
   private spin = 0;
   readonly eye = new THREE.Vector3();
   readonly size: number;
@@ -115,6 +117,14 @@ export class AircraftVisual {
       m.position.set(-c.x + spec.modelOffset[0], groundY - box.min.y + spec.modelOffset[1], -c.z + spec.modelOffset[2]);
       m.traverse((o) => { const mesh = o as THREE.Mesh; if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true; } });
       if (spec.prop) stripParts(this.model, spec.prop.strip);
+      // A model with its flaps as separate parts (FlapL, FlapR): hinge them at their leading edges.
+      const flapParts: THREE.Object3D[] = []; m.traverse((o) => { if (/^Flap[LR]$/.test(o.name)) flapParts.push(o); });
+      for (const f of flapParts) {
+        this.model.updateMatrixWorld(true);
+        const b = new THREE.Box3().setFromObject(f), pivot = new THREE.Group();
+        this.model.add(pivot); pivot.position.copy(this.model.worldToLocal(new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y, b.max.z)));
+        pivot.updateMatrixWorld(true); pivot.attach(f); this.flaps.push(pivot);
+      }
       if (spec.model === 'helicopter') {
         const blades: THREE.Object3D[] = [];
         m.traverse((o) => { if (o.name === 'Box04_Box014' || o.name === 'Box20183' || o.name === 'Cylinder005') blades.push(o); });
@@ -124,7 +134,12 @@ export class AircraftVisual {
     this.root.add(this.model);
     const box = new THREE.Box3().setFromObject(this.model);
     this.size = box.isEmpty() ? 8 : box.getSize(new THREE.Vector3()).length() / 2;
-    if (spec.prop && spec.engine) { this.propeller = new Propeller(spec.prop, spec.engine.propRadius); this.root.add(this.propeller.group); }
+    if (spec.prop && spec.engine) {
+      for (const side of spec.prop.mirror ? [1, -1] : [1]) {
+        const p = new Propeller({ ...spec.prop, hub: [side * spec.prop.hub[0], spec.prop.hub[1], spec.prop.hub[2]] }, spec.engine.propRadius);
+        this.propellers.push(p); this.root.add(p.group);
+      }
+    }
     if (spec.fittedGear) this.root.add(fittedGear(spec, spec.fittedGear));
     if (spec.rotor) {
       this.addDisc(spec.rotor.hub, spec.rotor.radius, new THREE.Vector3(0, 1, 0), 0.12);
@@ -163,7 +178,8 @@ export class AircraftVisual {
     const rate = (a.rpm / 60) * Math.PI * 2;
     this.spin += rate * dt;
     for (const pr of this.props) pr.obj.quaternion.setFromAxisAngle(pr.axis, this.spin);
-    this.propeller?.update(a.rpm, dt);
+    for (const p of this.propellers) p.update(a.rpm, dt);
+    for (const f of this.flaps) f.rotation.x = -a.flaps * (a.spec.engine?.maxFlaps ?? 0); // trailing edge down
     const fast = Math.min(1, a.rpm / ((a.spec.engine?.rpm ?? a.spec.rotor?.rpm ?? 1) * 0.5));
     for (const d of this.discs) { d.mesh.visible = fast > 0.15; d.mat.opacity = (a.spec.rotor ? 0.14 : 0.3) * fast; }
     if (this.flame) { this.flame.visible = a.burner; this.flame.scale.setScalar(0.85 + Math.random() * 0.3); }

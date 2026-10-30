@@ -102,6 +102,6 @@ export class Input {
     f.roll = fAnalog ? fRoll : ease(f.roll, fRoll, 4.5);
     f.yaw = ease(f.yaw, fYaw, 4);
     f.lift = fLift;
-    f.brake = handbrake;
+    f.brake = handbrake > f.brake ? ease(f.brake, handbrake, 4) : handbrake; // brakes squeeze on, let go at once
   }
 }

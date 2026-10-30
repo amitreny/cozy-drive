@@ -3,7 +3,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { liftCoef, liftSlope, stallAngle } from '../src/flight/aero';
 import { Aircraft, type FlightAssist, type FlightInput } from '../src/flight/aircraft';
 import { density, Wind } from '../src/flight/atmosphere';
+import { TakeoffHold } from '../src/flight/session';
 import { AIRCRAFT } from '../src/flight/specs';
+import { usableAt } from '../src/ui/hangar';
+import { airportById } from '../src/world/airports';
 import { S } from '../src/world/surfaces';
 import { DT, initRapier } from './sim';
 
@@ -183,5 +186,137 @@ describe('the other aircraft', () => {
       run(4, 'relaxed');
       expect(ac.crashed, id).toBeNull();
     }
+  });
+});
+
+describe('hands-off take-offs (relaxed assist)', () => {
+  /** A take-off as a player flies it: full power, S held 1.5 s at rotation speed, no steering; wind from the left. */
+  const takeoff = (id: string, crosswind: number) => {
+    const wind = new Wind(); wind.speed = crosswind; wind.heading = -Math.PI / 2; // blowing towards -x: from the left
+    const world = new R.World({ x: 0, y: -9.81, z: 0 }); world.timestep = DT;
+    world.createCollider(R.ColliderDesc.cuboid(20000, 0.5, 20000).setTranslation(0, -0.5, 0).setFriction(0.8)); world.step();
+    const spec = AIRCRAFT[id], lowest = Math.min(...spec.gear.map((g) => g.pos[1]));
+    const ac = new Aircraft(R, world, spec, { x: 0, y: -lowest + 0.05, z: 0 }, 0, { surfaceAt: () => S.Asphalt, waterLevelAt: () => -100, groundAt: () => 0, wind });
+    const input: FlightInput = { pitch: 0, roll: 0, yaw: 0, lift: 0, brake: 0 };
+    const vr = { wren: 27, poppy: 22, kestrel: 33, heron: 50 }[id]!;
+    if (id === 'heron') ac.flapsTarget = 1 / 3;
+    const hold = new TakeoffHold();
+    let rotateAt = -1, liftoffHeading: number | null = null, worstOnGround = 0, airborneAt = -1, swing = 0;
+    for (let t = 0; t < 45; t += DT) {
+      input.lift = t > 3 && ac.throttle < 1 ? 1 : 0;
+      if (rotateAt < 0 && ac.onGround && ac.airspeed > vr) rotateAt = t;
+      input.pitch = rotateAt >= 0 && t - rotateAt < 1.5 ? 1 : 0;
+      input.yaw = hold.update(ac, false, DT) ?? 0;
+      ac.step(DT, input, 'relaxed'); world.step(); ac.capture();
+      if (ac.onGround) worstOnGround = Math.max(worstOnGround, Math.abs(ac.heading));
+      if (airborneAt < 0 && !ac.onGround) airborneAt = t;
+      if (airborneAt >= 0 && t - airborneAt < 6) swing = Math.max(swing, Math.abs(ac.body.angvel().y)); // how fast the nose swings round
+      if (liftoffHeading === null && !ac.onGround && ac.altitude > 6) liftoffHeading = ac.heading;
+    }
+    expect(ac.crashed, id).toBeNull();
+    return { ac, liftoffHeading, worstOnGround, swing, track: Math.atan2(ac.body.linvel().x, ac.body.linvel().z) };
+  };
+  it('engine torque no longer turns the aircraft once it is flying', () => {
+    for (const id of ['wren', 'heron']) {
+      const { ac, liftoffHeading } = takeoff(id, 0);
+      expect(liftoffHeading, id).not.toBeNull();
+      expect(Math.abs(ac.heading - liftoffHeading!) / deg, id).toBeLessThan(1);
+      expect(Math.abs(ac.bank) / deg, id).toBeLessThan(0.3);
+    }
+  });
+  it('rolls straight down the runway, taildraggers too, and eases into a crosswind crab after lift-off', () => {
+    for (const id of ['wren', 'poppy', 'kestrel', 'heron']) for (const wind of [0, 4]) {
+      const { worstOnGround, track, swing } = takeoff(id, wind);
+      expect(worstOnGround / deg, `${id} wind ${wind}`).toBeLessThan(10); // no ground loop
+      expect(Math.abs(track) / deg, `${id} wind ${wind}`).toBeLessThan(8); // nose crabbed into the wind, path along the runway
+      expect(swing / deg, `${id} wind ${wind}`).toBeLessThan(4); // and it eases round into the crab, no snap at lift-off
+    }
+  });
+});
+
+describe('braking on the ground', () => {
+  it('stops without the nose diving: nosewheels take the weight braking throws on them, tailwheels stay down', () => {
+    for (const id of ['wren', 'puffin', 'heron', 'poppy', 'kestrel']) for (const v0 of [8, 25]) {
+      const { ac, input, run } = setup(id);
+      run(3, 'relaxed');
+      const p0 = ac.pitchAngle, v = ac.body.linvel();
+      ac.body.setLinvel({ x: v.x, y: v.y, z: v0 }, true);
+      (ac as unknown as { hasLastV: boolean }).hasLastV = false;
+      let dip = 0, t = 0;
+      run(12, 'relaxed', () => { t += DT; input.brake = Math.min(1, t * 4); dip = Math.max(dip, p0 - ac.pitchAngle); });
+      expect(ac.crashed, `${id} ${v0}`).toBeNull();
+      expect(ac.groundSpeed, `${id} ${v0}`).toBeLessThan(0.5);
+      const tail = ac.spec.gear.some((g) => g.pos[2] < -2 && !ac.spec.gear.some((n) => n.pos[2] > 1.2 && n.steer));
+      if (!tail) expect(dip / deg, `${id} ${v0}`).toBeLessThan(3);
+    }
+  });
+});
+
+describe('Heron (Dash 8-100 class)', () => {
+  it('lights its turbines over a few seconds: no thrust until they are running', () => {
+    const { ac, input, run } = setup('heron');
+    input.lift = 1;
+    run(1.5, 'relaxed');
+    expect(ac.thrust).toBeLessThanOrEqual(0); expect(ac.rpm).toBeGreaterThan(50); expect(ac.rpm).toBeLessThan(400);
+    run(4, 'relaxed');
+    expect(ac.thrust).toBeGreaterThan(20_000);
+  });
+  it('with a notch of flap, lifts off around 90–110 kt in well under the 900 m runway', () => {
+    const { ac, input, run } = setup('heron');
+    ac.flapsTarget = 1 / 3;
+    run(3, 'relaxed');
+    let liftoff = 0, dist = 0;
+    input.lift = 1;
+    run(50, 'relaxed', () => {
+      if (ac.throttle >= 1) input.lift = 0;
+      input.pitch = ac.onGround ? (ac.airspeed > 46 ? 0.7 : 0) : Math.max(-1, Math.min(1, (0.14 - ac.pitchAngle) * 3));
+      input.yaw = ac.onGround ? Math.max(-1, Math.min(1, ac.heading * 3 + ac.curPos.x * 0.05)) : 0;
+      if (!liftoff && !ac.onGround && ac.altitude > 3) { liftoff = ac.airspeed; dist = ac.curPos.z; }
+    });
+    expect(ac.crashed).toBeNull();
+    expect(liftoff).toBeGreaterThan(46); expect(liftoff).toBeLessThan(57);
+    expect(dist).toBeGreaterThan(350); expect(dist).toBeLessThan(650);
+    expect(ac.altitude).toBeGreaterThan(150);
+  });
+  it('cruises at 430–490 km/h low down at full power', () => {
+    const { ac, input, run } = setup('heron', { y: 600, speed: 120 });
+    ac.throttle = 1;
+    run(120, 'standard', () => { input.pitch = Math.max(-1, Math.min(1, (600 - ac.altitude) * 0.01 - ac.vs * 0.05)); input.roll = Math.max(-1, Math.min(1, -ac.bank * 1.5)); });
+    expect(ac.crashed).toBeNull();
+    expect(Math.abs(ac.altitude - 600)).toBeLessThan(30);
+    expect(ac.airspeed * 3.6).toBeGreaterThan(430); expect(ac.airspeed * 3.6).toBeLessThan(490);
+  });
+  it('stalls clean at about 85–100 kt', () => {
+    const { ac, input, run } = setup('heron', { y: 900, speed: 70 });
+    let stallSpeed = 0;
+    run(90, 'simlite', () => { holdAlt(ac, input, 900); if (!stallSpeed && ac.vs < -3 && ac.alpha > 8 * deg && ac.airspeed < 56) stallSpeed = ac.airspeed; });
+    expect(stallSpeed).toBeGreaterThan(44); expect(stallSpeed).toBeLessThan(52);
+  });
+  it('stops from 45 m/s on the brakes in under 450 m', () => {
+    const { ac, input, run } = setup('heron', { speed: 45 });
+    input.brake = 1;
+    run(30, 'relaxed', () => { input.yaw = Math.max(-1, Math.min(1, ac.heading * 3 + ac.curPos.x * 0.05)); });
+    expect(ac.crashed).toBeNull();
+    expect(ac.groundSpeed).toBeLessThan(0.5); expect(ac.curPos.z).toBeLessThan(450);
+  });
+  it('flies hands-off, and answers the stick at an airliner pace', () => {
+    const { ac, input, run } = setup('heron', { y: 500, speed: 90 });
+    ac.throttle = 0.55;
+    let maxBank = 0;
+    run(40, 'relaxed', () => { maxBank = Math.max(maxBank, Math.abs(ac.bank)); });
+    expect(ac.crashed).toBeNull(); expect(maxBank / deg).toBeLessThan(3);
+    input.roll = 1; run(4, 'relaxed'); input.roll = 0;
+    expect(ac.bank / deg).toBeGreaterThan(25); expect(ac.bank / deg).toBeLessThan(55);
+    run(12, 'relaxed');
+    expect(Math.abs(ac.bank) / deg).toBeLessThan(8); // the wings come back level
+    const p0 = ac.pitchAngle;
+    input.pitch = 1; run(3, 'relaxed'); input.pitch = 0;
+    expect((ac.pitchAngle - p0) / deg).toBeGreaterThan(3); expect((ac.pitchAngle - p0) / deg).toBeLessThan(16);
+  });
+  it('is offered only where the runway is long enough', () => {
+    const heron = AIRCRAFT.heron;
+    expect(usableAt(heron, airportById('airfield')!)).toBe(true);
+    expect(usableAt(heron, airportById('strip')!)).toBe(false);
+    expect(usableAt(AIRCRAFT.wren, airportById('strip')!)).toBe(true);
   });
 });

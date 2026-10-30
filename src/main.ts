@@ -282,6 +282,7 @@ async function boot(): Promise<void> {
     chase.snap(); input.clearPresses();
     hud.toast(spec.kind === 'balloon' ? `🎈 <b>${spec.name}</b> · hold R for the burner, F to vent · E to pack up when you land`
       : spec.kind === 'heli' ? `🚁 <b>${spec.name}</b> · R/F climb and descend, W/A/S/D to move, Z/X to turn · E to park`
+      : spec.id === 'heron' ? `✈ <b>${spec.name}</b> · the turbines take a moment to light · V for a notch of flap, R to full power, S to rotate at 185 km/h · E to park`
       : `✈ <b>${spec.name}</b> · R for throttle, steer with A/D, S to lift off around ${spec.id === 'poppy' ? 80 : spec.id === 'kestrel' ? 120 : 100} km/h · E to park`);
     persist();
   }
@@ -375,8 +376,11 @@ async function boot(): Promise<void> {
       crashFade = 1; fade.style.opacity = '1';
       const why = a.crashed;
       setTimeout(() => {
-        flight.respawn(); chase.snap(); fade.style.opacity = '0'; crashFade = 0;
-        hud.toast(`${why === 'water' ? 'Splash!' : 'Oof.'} The mechanics patched the ${a.spec.name} up · back at ${flight.home?.name}`);
+        const runway = flight.respawn();
+        // The runway's end may be far from the crash: load the ground there before the next physics step.
+        const p = a.body.translation(); terrainPhysics.update(p.x, p.z, 300, 999);
+        chase.snap(); fade.style.opacity = '0'; crashFade = 0;
+        hud.toast(`${why === 'water' ? 'Splash!' : 'Oof.'} The mechanics patched the ${a.spec.name} up · back at ${flight.home?.name}${runway ? `, lined up on runway ${runway} with the engine running · R to go` : ''}`);
       }, 700);
     }
   }

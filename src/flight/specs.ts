@@ -48,6 +48,19 @@ export interface PropVisual {
   colors: { front: number; rear: number; tips: number[] };
   /** Boxes (body frame, [min, max]): model parts lying wholly inside one are removed. */
   strip: [V, V][];
+  /** A twin: a second propeller at the hub mirrored across the centreline. */
+  mirror?: boolean;
+}
+
+/**
+ * The engine(s). `propPos` is where the (total) thrust acts; a twin's engines sit symmetrically about it.
+ * `thrustFade`: airspeed (m/s) at which static thrust would fade to nothing (a fixed-pitch prop ~120, a
+ * constant-speed one holds its bite much longer). `idle`: propeller speed at idle as a share of `rpm`.
+ * A `turbine` spools slowly: it takes a few seconds to light, and its power lags the lever.
+ */
+export interface EngineSpec {
+  power: number; staticThrust: number; propPos: V; propRadius: number; rpm: number; maxFlaps: number;
+  props?: number; thrustFade?: number; idle?: number; turbine?: boolean;
 }
 
 /** Landing gear for a model drawn without any: sprung legs (from `legRoot`, mirrored) and spats to the braked wheels, a tailwheel. */
@@ -65,8 +78,12 @@ export interface AircraftSpec {
   surfaces: SurfaceSpec[];
   /** Fuselage, gear and struts: equivalent flat-plate drag area (m²), per axis [side, vertical, forward]. */
   bodyCdA: V;
-  engine?: { power: number; staticThrust: number; propPos: V; propRadius: number; rpm: number; maxFlaps: number };
+  engine?: EngineSpec;
   prop?: PropVisual;
+  /** Relaxed assist: pitch and roll rate (rad/s) at full stick (a light aircraft: 0.45 and 1.2). */
+  handling?: { pitchRate: number; rollRate: number };
+  /** Shortest runway (m) it can be flown from; a base without one won't have it in the hangar. */
+  minRunway?: number;
   fittedGear?: FittedGear;
   rotor?: { radius: number; hub: V; power: number; rpm: number; maxTilt: number; tailArm: number };
   balloon?: { volume: number; envelopeY: number; radius: number; burner: number };
@@ -220,6 +237,47 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     capacity: 1, price: 1400, eye: [0, 0.85, -0.4],
   },
+  // Dash 8-100-class regional turboprop: two 2,000 shp turboprops on a high wing, room for a planeload. The model
+  // is an An-24-style twin turboprop (converted from its .blend by tools/blend2glb.mjs, in the Heron's livery),
+  // scaled to the Dash 8's 25.9 m span and seated so its wheels sit on the gear below.
+  heron: {
+    id: 'heron', name: 'Heron', kind: 'plane', realType: 'Regional airliner (Dash 8-100 class)',
+    blurb: 'Two turboprops and room for a planeload. Needs the long runway; slow to spool, steady as a rock.',
+    model: 'turboprop', credit: '"Twin turboprop rigged airplane" by mfonasd (CC0)',
+    modelScale: 0.886, modelYaw: 0, modelOffset: [0, 0, -1.517],
+    mass: 14_000, inertia: [250_000, 308_000, 147_000],
+    hull: [
+      { half: [1.3, 1.25, 9.0], pos: [0, 0.21, -0.6] }, { half: [0.6, 0.55, 1.6], pos: [0, 0.95, -10.9] },
+      { half: [12.9, 0.2, 1.3], pos: [0, 1.35, -1.2] }, { half: [4.9, 0.1, 0.9], pos: [0, 1.45, -10.2] },
+      { half: [0.15, 2.0, 1.4], pos: [0, 3.6, -10.5] },
+      { half: [0.55, 0.6, 3.4], pos: [4.17, 1.15, -0.3] }, { half: [0.55, 0.6, 3.4], pos: [-4.17, 1.15, -0.3] },
+    ],
+    surfaces: [
+      // The centre of gravity sits near the wing's quarter chord, as an airliner's does: the tail does the stabilising.
+      ...wing({ y: 1.35, z: 0.15, area: 54.4, span: 25.9, dihedral: 1 * deg, incidence: 3 * deg, alpha0: -3 * deg, clMax: 1.7, cd0: 0.008, e: 0.8, tau: 0.32, flaps: true, aileronSpan: 0.3 }),
+      // A conventional tail: the tailplane low on the tail cone (it sees the wing's downwash), a tall fin above.
+      { pos: [0, 1.5, -10.1], area: 12, aspect: 7, orient: 'h', incidence: 0, clMax: 1.1, cd0: 0.008, control: 'elevator', tau: 0.45, downwash: true },
+      { pos: [0, 3.5, -10.5], area: 12, aspect: 1.8, orient: 'v', clMax: 1.0, cd0: 0.008, control: 'rudder', tau: 0.45 },
+    ],
+    bodyCdA: [30, 40, 1.2],
+    // A 14-tonne airliner answers the stick at an airliner's pace.
+    handling: { pitchRate: 0.12, rollRate: 0.4 },
+    // Two PW120-class turboprops (1,490 kW each), 4-blade 3.96 m constant-speed props governed near 1,200 rpm.
+    engine: { power: 2_980_000, staticThrust: 50_000, propPos: [0, 1.15, 3.45], propRadius: 1.98, rpm: 1200, maxFlaps: 35 * deg, props: 2, thrustFade: 220, idle: 0.6, turbine: true },
+    prop: {
+      hub: [4.17, 1.15, 3.45], blades: 4, pitch: 4.5, chord: 0.15, mirror: true,
+      spinner: { base: 3.15, length: 0.7, radius: 0.36, color: 0xf2f2f2 },
+      colors: { front: 0x3b3f43, rear: 0x1c1c1c, tips: [0xf2c230] },
+      strip: [],
+    },
+    minRunway: 800,
+    gear: [
+      { pos: [0, -2.1, 6.65], travel: 0.3, type: 'wheel', steer: 30 * deg },
+      { pos: [4.16, -2.1, -0.55], travel: 0.32, type: 'wheel', brake: true },
+      { pos: [-4.16, -2.1, -0.55], travel: 0.32, type: 'wheel', brake: true },
+    ],
+    capacity: 10, price: 2600, eye: [0.55, 0.98, 6.4],
+  },
   // Bell 206-class light helicopter: lands anywhere flat, including the summit pad and village helipad.
   hummingbird: {
     id: 'hummingbird', name: 'Hummingbird', kind: 'heli', realType: 'Light helicopter (Bell 206 class)',
@@ -259,4 +317,4 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
   },
 };
 
-export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'dandelion', 'kestrel'];
+export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'dandelion', 'kestrel', 'heron'];

@@ -4,10 +4,11 @@ import type { Job } from '../gameplay/jobs';
 import type { Shop } from './garage';
 import { jobListHtml } from './jobBoard';
 
-/** Which aircraft can use a place: helipads take the helicopter (and the balloon), docks the seaplane. */
+/** Which aircraft can use a place: helipads take the helicopter (and the balloon), docks the seaplane; an airliner needs a long runway. */
 export function usableAt(spec: AircraftSpec, place: AirPlace): boolean {
   if (place.kind === 'helipad') return spec.kind === 'heli' || spec.kind === 'balloon';
   if (place.kind === 'dock') return spec.id === 'puffin';
+  if (spec.minRunway) return !!place.runway && place.runway.halfLen * 2 >= spec.minRunway;
   return true;
 }
 export const aircraftKey = (id: string): string => `aircraft:${id}`;

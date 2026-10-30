@@ -15,7 +15,7 @@ await page.goto('http://localhost:4186/');
 await page.waitForFunction(() => window.__game, null, { timeout: 120000 });
 await page.keyboard.press('KeyH');
 
-for (const id of ['wren', 'puffin', 'poppy', 'kestrel']) {
+for (const id of (process.argv[3] ?? 'wren,puffin,poppy,kestrel').split(',')) {
   await page.evaluate(async (id) => {
     const { AIRCRAFT } = await import('/src/flight/specs.ts');
     const g = window.__game, spec = AIRCRAFT[id];
