@@ -252,6 +252,33 @@ describe('braking on the ground', () => {
   });
 });
 
+describe('helicopters: power falls with the air, which sets the ceiling', () => {
+  /** Vertical speed after 12 s at full collective, starting at height h (and forward speed v). */
+  const climbAt = (id: string, h: number, v = 0) => {
+    const { ac, input, run } = setup(id, { y: h, speed: v });
+    input.lift = 1;
+    run(12, 'relaxed', () => { if (v) input.pitch = Math.max(-1, Math.min(1, (ac.airspeed - v) * 0.05)); });
+    expect(ac.crashed).toBeNull();
+    return ac.vs;
+  };
+  it('the Pelican hovers hands-off and climbs at about 10 m/s, three times the Hummingbird', () => {
+    for (const id of ['pelican', 'hummingbird']) {
+      const { ac, run } = setup(id, { y: 30 });
+      run(10, 'relaxed');
+      expect(Math.abs(ac.altitude - 30), id).toBeLessThan(2);
+    }
+    const pelican = climbAt('pelican', 30), hummingbird = climbAt('hummingbird', 30);
+    expect(pelican).toBeGreaterThan(8.5); expect(hummingbird).toBeLessThan(4.5);
+  });
+  it('the Hummingbird tops out around 4–5 km, the Pelican keeps climbing past 6 km', () => {
+    expect(climbAt('hummingbird', 3000)).toBeGreaterThan(0.5);
+    expect(climbAt('hummingbird', 5500, 30)).toBeLessThan(0);
+    expect(climbAt('pelican', 5500)).toBeGreaterThan(1);
+    expect(climbAt('pelican', 6500, 30)).toBeGreaterThan(1);
+    expect(climbAt('pelican', 8000, 30)).toBeLessThan(0);
+  });
+});
+
 describe('Heron (Dash 8-100 class)', () => {
   it('lights its turbines over a few seconds: no thrust until they are running', () => {
     const { ac, input, run } = setup('heron');

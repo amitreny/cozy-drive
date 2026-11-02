@@ -16,14 +16,16 @@ function discMaterial(color = 0x222222, opacity = 0.35): THREE.MeshBasicMaterial
 
 /**
  * Remove the parts of a model (connected pieces of each mesh) that lie wholly inside any of the boxes, given in
- * the frame `root` is drawn in. Used to cut a model's static propeller out so a working one can go in its place.
+ * the frame `root` is drawn in. Used to cut a model's static propeller out so a working one can go in its place,
+ * or to lift its rotor out so it can spin: the parts cut out come back as meshes of their own, beside the ones
+ * they came from (same material, same place).
  */
-function stripParts(root: THREE.Object3D, boxes: [number, number, number][][]): void {
+function stripParts(root: THREE.Object3D, boxes: [number, number, number][][]): THREE.Mesh[] {
   root.updateMatrixWorld(true);
   const inside = (b: number[]) => boxes.some(([lo, hi]) => b[0] >= lo[0] && b[1] >= lo[1] && b[2] >= lo[2] && b[3] <= hi[0] && b[4] <= hi[1] && b[5] <= hi[2]);
-  root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
+  const meshes: THREE.Mesh[] = [], cutOut: THREE.Mesh[] = [];
+  root.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
+  for (const mesh of meshes) {
     const geo = mesh.geometry, pos = geo.attributes.position, idx = geo.index, e = mesh.matrixWorld.elements;
     const tris = (idx ? idx.count : pos.count) / 3, vert = (t: number, k: number) => (idx ? idx.getX(t * 3 + k) : t * 3 + k);
     const P = new Float32Array(pos.count * 3);
@@ -49,14 +51,19 @@ function stripParts(root: THREE.Object3D, boxes: [number, number, number][][]): 
       for (let k = 0; k < 3; k++) for (let a = 0; a < 3; a++) { const v = P[vert(t, k) * 3 + a]; b[a] = Math.min(b[a], v); b[a + 3] = Math.max(b[a + 3], v); }
     }
     const cut = new Set([...bounds].filter(([, b]) => inside(b)).map(([r]) => r));
-    if (!cut.size) return;
-    const keep: number[] = [];
-    for (let t = 0; t < tris; t++) if (!cut.has(find(rep[vert(t, 0)]))) keep.push(vert(t, 0), vert(t, 1), vert(t, 2));
-    if (!keep.length) { mesh.visible = false; return; }
-    const g = geo.clone(); // the source model's geometry is shared by every clone
-    g.setIndex(keep); g.clearGroups();
-    mesh.geometry = g;
-  });
+    if (!cut.size) continue;
+    const keep: number[] = [], gone: number[] = [];
+    for (let t = 0; t < tris; t++) (cut.has(find(rep[vert(t, 0)])) ? gone : keep).push(vert(t, 0), vert(t, 1), vert(t, 2));
+    // New geometry for both halves: the source model's is shared by every clone of it.
+    const piece = (index: number[]) => { const g = geo.clone(); g.setIndex(index); g.clearGroups(); return g; };
+    const part = new THREE.Mesh(piece(gone), mesh.material);
+    part.position.copy(mesh.position); part.quaternion.copy(mesh.quaternion); part.scale.copy(mesh.scale);
+    part.castShadow = mesh.castShadow;
+    mesh.parent?.add(part); cutOut.push(part);
+    if (!keep.length) { mesh.visible = false; continue; }
+    mesh.geometry = piece(keep);
+  }
+  return cutOut;
 }
 
 /** Sprung main legs with spatted wheels, and a small tailwheel, for a model drawn without gear. */
@@ -116,7 +123,9 @@ export class AircraftVisual {
       const groundY = Math.min(...spec.gear.map((g) => g.pos[1]), ...(spec.floats ?? []).map((f) => f.pos[1] - f.half[1]));
       m.position.set(-c.x + spec.modelOffset[0], groundY - box.min.y + spec.modelOffset[1], -c.z + spec.modelOffset[2]);
       m.traverse((o) => { const mesh = o as THREE.Mesh; if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true; } });
-      if (spec.prop) stripParts(this.model, spec.prop.strip);
+      if (spec.prop) for (const old of stripParts(this.model, spec.prop.strip)) old.removeFromParent();
+      // A rotor modelled into the airframe: lift it out and spin it about its hub.
+      if (spec.rotorParts) this.pivotGroup(stripParts(this.model, spec.rotorParts), new THREE.Vector3(0, 1, 0));
       // A model with its flaps as separate parts (FlapL, FlapR): hinge them at their leading edges.
       const flapParts: THREE.Object3D[] = []; m.traverse((o) => { if (/^Flap[LR]$/.test(o.name)) flapParts.push(o); });
       for (const f of flapParts) {
@@ -143,7 +152,8 @@ export class AircraftVisual {
     if (spec.fittedGear) this.root.add(fittedGear(spec, spec.fittedGear));
     if (spec.rotor) {
       this.addDisc(spec.rotor.hub, spec.rotor.radius, new THREE.Vector3(0, 1, 0), 0.12);
-      this.addDisc([0.25, 0.95, -spec.rotor.tailArm], 0.85, new THREE.Vector3(1, 0, 0), 0.3);
+      const tail = spec.rotor.tail ?? { pos: [0.25, 0.95, -spec.rotor.tailArm] as [number, number, number], radius: 0.85 };
+      this.addDisc(tail.pos, tail.radius, new THREE.Vector3(1, 0, 0), 0.3);
     }
     if (spec.balloon) {
       const f = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.6, 10), new THREE.MeshBasicMaterial({ color: 0xffa340, transparent: true, opacity: 0.85 }));

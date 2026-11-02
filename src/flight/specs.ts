@@ -85,7 +85,14 @@ export interface AircraftSpec {
   /** Shortest runway (m) it can be flown from; a base without one won't have it in the hangar. */
   minRunway?: number;
   fittedGear?: FittedGear;
-  rotor?: { radius: number; hub: V; power: number; rpm: number; maxTilt: number; tailArm: number };
+  /**
+   * `power` is at sea level: a turboshaft's falls with the air's density, which sets the helicopter's ceiling.
+   * `climb`: the climb rate (m/s) full collective asks for on the easier assists. `tail`: where the tail rotor
+   * is drawn (default: a small one at `tailArm`).
+   */
+  rotor?: { radius: number; hub: V; power: number; rpm: number; maxTilt: number; tailArm: number; climb?: number; tail?: { pos: V; radius: number } };
+  /** Boxes (body frame, [min, max]): model parts lying wholly inside one are the main rotor, and spin with it. */
+  rotorParts?: [V, V][];
   balloon?: { volume: number; envelopeY: number; radius: number; burner: number };
   gear: GearSpec[];
   floats?: FloatSpec[];
@@ -298,6 +305,30 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
     ],
     capacity: 3, price: 2200, eye: [0.35, 0.6, 1.15],
   },
+  // Sea King / S-61-class medium transport helicopter: twin turbines and a 19 m four-blade rotor. Lots of power for
+  // its weight, so it climbs fast and keeps climbing in thin air long after the Hummingbird has run out.
+  pelican: {
+    id: 'pelican', name: 'Pelican', kind: 'heli', realType: 'Transport helicopter (Sea King class)',
+    blurb: 'Twin turbines and a huge rotor: carries a crowd, climbs at nearly 10 m/s and keeps going past 6,000 m, long after the Hummingbird runs out of air.',
+    model: 'transport-heli', credit: '"Helicopter" by Zsky (CC BY 3.0)',
+    // The model is the S-61's own proportions: scaled to its 18.9 m rotor, the hub over the centre of gravity.
+    modelScale: 0.457, modelYaw: 0, modelOffset: [0, 0, -0.88],
+    mass: 8000, inertia: [90_000, 78_000, 33_000],
+    hull: [{ half: [1.6, 1.05, 5.2], pos: [0, -0.17, 2.1] }, { half: [0.8, 0.6, 3.9], pos: [0, 0.2, -6.2] }, { half: [0.15, 1.2, 0.9], pos: [0, 0.8, -10.3] }],
+    surfaces: [
+      { pos: [0, 0.14, -10.4], area: 1.8, aspect: 5, orient: 'h', clMax: 1.0, cd0: 0.01, control: null },
+      { pos: [0, 0.9, -10.3], area: 3.0, aspect: 1.5, orient: 'v', clMax: 1.0, cd0: 0.01, control: null },
+    ],
+    bodyCdA: [18, 40, 2.8],
+    rotor: { radius: 9.46, hub: [0, 2.45, 0], power: 3_000_000, rpm: 203, maxTilt: 9 * deg, tailArm: 10.3, climb: 12, tail: { pos: [0.35, 1.4, -10.3], radius: 1.6 } },
+    rotorParts: [[[-9.7, 1.55, -9.7], [9.7, 2.7, 9.7]]],
+    // Wheels, with the parking brake on: they hold like skids.
+    gear: [
+      { pos: [1.3, -2.62, 2.68], travel: 0.25, type: 'skid' }, { pos: [-1.3, -2.62, 2.68], travel: 0.25, type: 'skid' },
+      { pos: [0, -2.62, -8.96], travel: 0.2, type: 'skid' },
+    ],
+    capacity: 8, price: 3800, eye: [-0.6, 0.55, 4.6],
+  },
   // Cameron O-77-class hot-air balloon: heat to rise, vent to sink, steer by finding the wind you want.
   dandelion: {
     id: 'dandelion', name: 'Dandelion', kind: 'balloon', realType: 'Hot-air balloon (2,200 m³ envelope)',
@@ -317,4 +348,4 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
   },
 };
 
-export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'dandelion', 'kestrel', 'heron'];
+export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'pelican', 'dandelion', 'kestrel', 'heron'];

@@ -2,7 +2,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { addScaled, clamp, cross, dot, normalize, rotate, set, v3, type Q4, type V3 } from '../core/math';
 import { S, SURFACES, type SurfaceId } from '../world/surfaces';
 import { dragCoef, groundEffect, liftCoef, stallAngle } from './aero';
-import { density, G, T0, type Wind } from './atmosphere';
+import { density, G, RHO0, T0, type Wind } from './atmosphere';
 import type { AircraftSpec, GearSpec, SurfaceSpec } from './specs';
 
 type Rapier = typeof RAPIER;
@@ -443,8 +443,10 @@ export class Aircraft {
   private stepHeli(dt: number, input: FlightInput, assist: FlightAssist, rho: number): void {
     const s = this.s, spec = this.spec, rot = spec.rotor!, body = this.body;
     const A = Math.PI * rot.radius ** 2, W = spec.mass * G;
+    // A turboshaft's power falls with the air's density: that, not a rule, is what sets the ceiling.
+    const P = rot.power * (rho / RHO0);
     // Momentum theory: the most thrust the engine's power can make in a hover (figure of merit 0.7).
-    const Tmax = Math.pow(0.7 * rot.power * Math.sqrt(2 * rho * A), 2 / 3);
+    const Tmax = Math.pow(0.7 * P * Math.sqrt(2 * rho * A), 2 / 3);
     const hubAgl = this.agl + rot.hub[1];
     const ge = clamp(1 / (1 - (rot.radius / (4 * Math.max(hubAgl, rot.radius * 0.3))) ** 2), 1, 1.18);
     const vh = Math.hypot(dot(s.air, s.fw), dot(s.air, s.lf));
@@ -460,7 +462,7 @@ export class Aircraft {
     } else {
       // Collective holds a climb/descent rate: R climbs, F descends, let go to hover.
       // Near the ground with the lever down, it settles onto its skids instead of hovering a hand's width up.
-      const vsT = input.lift * 4.5 - (input.lift <= 0 && (this.onGround || this.agl < 1.7) ? 1.2 : 0);
+      const vsT = input.lift * (rot.climb ?? 4.5) - (input.lift <= 0 && (this.onGround || this.agl < 1.7) ? 1.2 : 0);
       const hover = W / (Tmax * ge * etl * Math.max(0.5, s.up.y));
       collective = clamp(hover + (vsT - this.vs) * 0.12, 0, 1);
       this.collective = collective;
@@ -500,7 +502,7 @@ export class Aircraft {
 
     // ---- Torque and tail rotor ----
     const Omega = (rot.rpm * 2 * Math.PI) / 60;
-    const power = Math.min(rot.power, (T * (vi + Math.max(0, vAxial))) / 0.7 + 0.1 * rot.power);
+    const power = Math.min(P, (T * (vi + Math.max(0, vAxial))) / 0.7 + 0.1 * P);
     const Q = power / Omega; // main rotor drives the body to yaw nose-right
     const tailMax = 2.2 * (rot.power / Omega);
     const tailT = clamp(Q * 0.92 - pedal * tailMax * 0.6, -tailMax, tailMax); // anti-torque, + = nose left

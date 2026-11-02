@@ -4,7 +4,7 @@
 
 ## Aircraft (`src/flight/`)
 
-Seven aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are credited in CREDITS.md and in the hangar. The Heron's model is a CC0 An-24-style twin turboprop, converted from its .blend by `tools/blend2glb.mjs` (a small .blend reader in `tools/blendfile.mjs`).
+Eight aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are credited in CREDITS.md and in the hangar. The Heron's model is a CC0 An-24-style twin turboprop, converted from its .blend by `tools/blend2glb.mjs` (a small .blend reader in `tools/blendfile.mjs`).
 
 | Aircraft | Real type | Notes |
 |---|---|---|
@@ -13,6 +13,7 @@ Seven aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 | Puffin | Super Cub on amphibious floats | water or runway |
 | Kestrel | Extra 300-class aerobatic | taildragger, full-span ailerons |
 | Hummingbird | Bell 206 class | skids |
+| Pelican | Sea King / S-61 class | wheels, 19 m four-blade rotor, twin turbines: climbs ~10 m/s, past 6 km |
 | Dandelion | 2,200 m³ hot-air balloon | basket |
 | Heron | Dash 8-100-class regional turboprop | 14 t, twin turboprops, needs an 800 m runway |
 
@@ -32,6 +33,7 @@ Seven aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 **Helicopter:**
 - Thrust comes from momentum theory: the hover limit is set by power, with figure of merit 0.7.
 - Translational lift, ground effect and heave damping are included.
+- Turboshaft power falls with air density, which sets each helicopter's ceiling: the Hummingbird hovers to about 3.6 km (4.8 km in forward flight), the Pelican to about 6 km (7.2 km).
 - The cyclic tilts the rotor disc. The hub moment and rotor damping act on the body, and main-rotor torque is balanced by the tail rotor.
 
 **Balloon:**
@@ -55,6 +57,7 @@ Seven aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 | Poppy / Kestrel | Poppy lifts off slower than the Wren, the Kestrel faster |
 | Puffin | floats at a sensible draft; off the water in under 330 m |
 | Hummingbird | hovers hands-off and climbs |
+| Pelican | hovers hands-off; climbs above 8.5 m/s (the Hummingbird under 4.5); the Hummingbird can't climb at 5.5 km, the Pelican still can at 6.5 km and can't at 8 km |
 | Dandelion | holds level near its equilibrium temperature, climbs on the burner, sinks on the vent |
 | Heron | no thrust until the turbines light; with a notch of flap, lift-off at 46–57 m/s after 350–650 m; 430–490 km/h low down; clean stall 44–52 m/s; brakes to a stop from 45 m/s in under 450 m; hands-off stable, airliner roll and pitch rates; offered only at runways of 800 m or more |
 | All | a crash is detected |

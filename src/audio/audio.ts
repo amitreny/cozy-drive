@@ -25,6 +25,7 @@ export const VOICES: Record<string, EngineVoice> = {
   poppy: { cylinders: 7, exhaustHz: 70, brightness: 0.8, pattern: [1, 0.8, 1.1, 0.85, 1, 0.75, 1.05], rough: 0.14, level: 1.15 },
   kestrel: { cylinders: 6, exhaustHz: 120, brightness: 1.15, pattern: [1, 0.95, 1, 0.97, 1, 0.95], rough: 0.05, level: 1.1 },
   hummingbird: { cylinders: 12, exhaustHz: 340, brightness: 1.2, pattern: [1], rough: 0.02, level: 0.55 },
+  pelican: { cylinders: 12, exhaustHz: 250, brightness: 1.0, pattern: [1], rough: 0.02, level: 0.7 }, // twin turbines, deeper
   // The airliner's turboprops: a smooth turbine drone that rises to a whine with power.
   heron: { cylinders: 12, exhaustHz: 260, brightness: 1.1, pattern: [1], rough: 0.015, level: 0.7 },
 };

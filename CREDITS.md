@@ -16,6 +16,7 @@
 | Airplane (biplane) | Poly by Google | CC BY 3.0 | https://poly.pizza/m/8VysVKMXN2J | The biplane, `public/models/aircraft/biplane.glb` |
 | Aeroplane | Gilang Romadhan | CC BY 3.0 | https://poly.pizza/m/9VeIc0cybp4 | The sport plane, `public/models/aircraft/sport.glb` |
 | Helicopter | Poly by Google | CC BY 3.0 | https://poly.pizza/m/cTzINMr0WdS | The helicopter, `public/models/aircraft/helicopter.glb` |
+| Helicopter (transport) | Zsky | CC BY 3.0 | https://poly.pizza/m/hG2Qr0A3zR | The Pelican, `public/models/aircraft/transport-heli.glb` |
 | Hot air balloon | Poly by Google | CC BY 3.0 | https://poly.pizza/m/7Fej0Jd3_Di | The balloon, `public/models/aircraft/balloon.glb` |
 | Twin turboprop rigged airplane | mfonasd | CC0 | https://opengameart.org/content/twin-turboprop-rigged-airplane-low-poly | The Heron airliner, `public/models/aircraft/turboprop.glb` (converted from the .blend by `tools/blend2glb.mjs`) |
 | Package | Quaternius | CC0 1.0 | https://poly.pizza/m/mWkgWyrCfM | Delivery parcels, `public/models/cargo/package.glb` |
