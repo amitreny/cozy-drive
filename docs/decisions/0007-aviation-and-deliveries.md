@@ -62,6 +62,15 @@ Eight aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 | Heron | no thrust until the turbines light; with a notch of flap, lift-off at 46–57 m/s after 350–650 m; 430–490 km/h low down; clean stall 44–52 m/s; brakes to a stop from 45 m/s in under 450 m; hands-off stable, airliner roll and pitch rates; offered only at runways of 800 m or more |
 | All | a crash is detected |
 
+## Landing guide (`src/flight/approach.ts`, `landingGates.ts`; on by default, L toggles it in the air)
+
+An aeroplane flying towards a runway end (within 12 km, roughly along it, inside its approach funnel) is given an approach to it, as an instrument landing system would:
+- **Approach instrument** on the HUD: a centreline needle (full scale ±2.5°) and a glide-path needle (3°, full scale ±0.7°), each a diamond showing where the path is. Plain cues: the heading to steer to rejoin the centreline, how many metres high or low and the descent rate to fly, the approach speed (1.3 × the clean stall speed), when to set each notch of flap (by 7, 3.5 and 1.5 km), and when to flare.
+- **Gates** every 600 m along the glide path out to 6 km, widening with distance; the next one turns green while you're inside it.
+- **Maps** (the minimap zooms out to 3 km while flying a plane): every runway's extended centreline, the active one in coral with a dot each kilometre, and a line along your track.
+- **At the runways:** PAPI lights beside each aim point (four lights, white above and red below 3.5°/3.17°/2.83°/2.5°: two of each on the path), and at the airfield approach lights with a crossbar and, at night, a sequenced flasher.
+- The cockpit view hides the airframe (the models have no interiors), leaving the propellers and rotor discs.
+
 ## Airports (`src/world/airports.ts`, `airportsRender.ts`, `network.ts`)
 
 **The bases:**

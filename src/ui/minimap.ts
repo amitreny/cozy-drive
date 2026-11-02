@@ -4,7 +4,6 @@ import type { MapView } from './map';
 import type { WorldData } from '../world/terrainGen';
 
 const SIZE = 180;   // CSS pixels
-const RANGE = 320;  // metres from centre to rim
 
 /**
  * Where a world offset (dX, dZ) from the car lands on the mini-map, in pixels from the centre (+x right, +y down).
@@ -20,6 +19,8 @@ export function projectToMini(dX: number, dZ: number, yaw: number, headingUp: bo
 export class MiniMap {
   visible = true;
   rotate = true;
+  /** Metres from centre to rim: close in for driving, far out for flying (an approach starts kilometres away). */
+  range = 320;
   private canvas = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
   private acc = 1;
@@ -46,7 +47,7 @@ export class MiniMap {
     if (this.acc < 1 / 15) return;
     this.acc = 0;
     const g = this.ctx, c = SIZE / 2, base = this.map.baseCanvas(), half = this.w.size / 2;
-    const pxPerM = SIZE / 2 / RANGE;                          // minimap pixels per metre
+    const pxPerM = SIZE / 2 / this.range;                          // minimap pixels per metre
     const bScale = base.width / this.w.size;                  // base-map pixels per metre
     const rot = this.rotate ? yaw : 0;
     g.clearRect(0, 0, SIZE, SIZE);
@@ -55,13 +56,25 @@ export class MiniMap {
     g.fillStyle = '#e9dcc0'; g.fillRect(0, 0, SIZE, SIZE);
     g.translate(c, c); g.rotate(rot);
     // World → canvas: north (+z) up, +x to the left (see MAP_FOG_VERSION in map.ts).
-    const span = RANGE * 1.5;                                 // draw a bit beyond the rim so rotation never shows edges
+    const span = this.range * 1.5;                                 // draw a bit beyond the rim so rotation never shows edges
     const draw = (img: HTMLCanvasElement, s: number) => g.drawImage(img, (half - x - span) * s, (half - z - span) * s, span * 2 * s, span * 2 * s, -span * pxPerM, -span * pxPerM, span * 2 * pxPerM, span * 2 * pxPerM);
     g.imageSmoothingEnabled = true;
     draw(base, bScale);
     g.restore();
     g.save();
     g.beginPath(); g.arc(c, c, c - 2, 0, Math.PI * 2); g.clip();
+    // Flight guides: extended runway centrelines, distance marks and your track, under everything else.
+    const gd = this.map.guides();
+    for (const l of gd.lines) {
+      const [ax, ay] = projectToMini(l.x0 - x, l.z0 - z, yaw, this.rotate, pxPerM), [bx, by] = projectToMini(l.x1 - x, l.z1 - z, yaw, this.rotate, pxPerM);
+      g.strokeStyle = l.color; g.lineWidth = l.width; g.setLineDash(l.dash ?? []);
+      g.beginPath(); g.moveTo(c + ax, c + ay); g.lineTo(c + bx, c + by); g.stroke();
+    }
+    g.setLineDash([]);
+    for (const d of gd.dots) {
+      const [dx, dy] = projectToMini(d.x - x, d.z - z, yaw, this.rotate, pxPerM);
+      g.fillStyle = d.color; g.beginPath(); g.arc(c + dx, c + dy, d.r, 0, Math.PI * 2); g.fill();
+    }
     for (const v of this.vps) {
       const [dx, dy] = projectToMini(v.x - x, v.z - z, yaw, this.rotate, pxPerM);
       if (Math.hypot(dx, dy) > c - 8) continue;

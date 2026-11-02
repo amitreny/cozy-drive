@@ -1,5 +1,6 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
+import { aimDistance } from '../flight/approach';
 import { along, inRect, local, type AirPlace, type Rect } from './airports';
 import { S } from './surfaces';
 import { heightAt, waterLevelAt, type WorldData } from './terrainGen';
@@ -15,7 +16,22 @@ function textTexture(text: string, w: number, h: number, fg: string, bg: string 
   return t;
 }
 
-export interface AirportsView { group: THREE.Group; update(dt: number, wind: { x: number; z: number }, night: number): void }
+export interface AirportsView {
+  group: THREE.Group;
+  /** `viewer`: where the pilot's eye is, for the PAPI lights (they show red or white by the angle you see them at). */
+  update(dt: number, wind: { x: number; z: number }, night: number, viewer: { x: number; y: number; z: number }): void;
+}
+
+/** A soft round glow, for lights that must read from kilometres away. */
+function glowTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d')!, grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.25, 'rgba(255,255,255,0.9)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+/** PAPI units, nearest the runway first: each shows white above its angle and red below it. */
+const PAPI_ANGLES = [3.5, 3.17, 2.83, 2.5].map((d) => (d * Math.PI) / 180);
 
 /** Runway paint, hangars, towers, windsocks, helipads and piers for every airfield, strip, pad and dock. */
 export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldData, places: AirPlace[]): AirportsView {
@@ -62,6 +78,10 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
     return m;
   };
   const lights: THREE.Vector3[] = [], taxiLights: THREE.Vector3[] = [];
+  // Landing-aid lights keep the same size on screen however far away they are (they must read from kilometres
+  // out). Each kind is one point cloud, coloured light by light, so dozens of them cost two draw calls.
+  const papis: { at: THREE.Vector3; angle: number }[] = [];
+  const approachLights: { at: THREE.Vector3; order: number }[] = [];
   const socks: { pivot: THREE.Group; sock: THREE.Group }[] = [];
 
   for (const ap of places) {
@@ -102,6 +122,26 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
         const [x, z] = along(tx, a, sgn * (tx.halfWid + 0.8));
         if (ap.paved.some((p) => p !== tx && inRect(p, x, z, 1)) || inRect(rw, x, z, 1)) continue;
         taxiLights.push(new THREE.Vector3(x, heightAt(w, x, z) + 0.3, z));
+      }
+      // Landing aids at each end. PAPI: four lights beside the aim point, on the side away from the taxiway; from
+      // the 3° glide path you see two white and two red, all white when high, all red when low.
+      const papiSide = -Math.sign(local(rw, ap.spawn.x, ap.spawn.z)[1] || 1), aimD = aimDistance(L);
+      for (const end of [1, -1]) {
+        PAPI_ANGLES.forEach((angle, i) => {
+          const [x, z] = along(rw, -end * (L - aimD), papiSide * (W + 12 + i * 9)), y = heightAt(w, x, z);
+          box(x, z, rw.dir, 1.6, 0.45, 0.6, 0x3a3f44, y, false);
+          papis.push({ at: new THREE.Vector3(x, y + 0.6, z), angle });
+        });
+        // Approach lights (asphalt runways): a line along the extended centreline with a crossbar 150 m out.
+        if (rw.surface !== S.Asphalt) continue;
+        for (let d = 30; d <= 300; d += 30) {
+          const [x, z] = along(rw, -end * (L + d), 0);
+          approachLights.push({ at: new THREE.Vector3(x, heightAt(w, x, z) + 0.8, z), order: d });
+        }
+        for (const c of [-15, -10, -5, 5, 10, 15]) {
+          const [x, z] = along(rw, -end * (L + 150), c);
+          approachLights.push({ at: new THREE.Vector3(x, heightAt(w, x, z) + 0.8, z), order: -1 });
+        }
       }
       // Windsock beside the runway's middle.
       const [sx, sz] = along(rw, 40, -(W + 22) * Math.sign(local(rw, ap.spawn.x, ap.spawn.z)[1] || 1));
@@ -181,10 +221,20 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
   taxiLights.forEach((p, i) => tm.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
   group.add(tm);
 
+  const glow = glowTexture();
+  const cloud = (pts: THREE.Vector3[], px: number) => {
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pts.length * 3).fill(1), 3));
+    const m = new THREE.Points(g, new THREE.PointsMaterial({ size: px, sizeAttenuation: false, map: glow, vertexColors: true, transparent: true, depthWrite: false, fog: false }));
+    m.frustumCulled = false; m.renderOrder = 2; group.add(m);
+    return g.attributes.color as THREE.BufferAttribute;
+  };
+  const papiColor = cloud(papis.map((p) => p.at), 10), approachColor = cloud(approachLights.map((l) => l.at), 7);
+
   let t = 0;
   return {
     group,
-    update(dt, wind, night) {
+    update(dt, wind, night, viewer) {
       t += dt;
       const sp = Math.hypot(wind.x, wind.z), dir = Math.atan2(wind.x, wind.z);
       for (const s of socks) {
@@ -193,6 +243,18 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
         s.sock.rotation.x = Math.max(0, (1 - Math.min(1, sp / 7.7)) * 70 * deg) + Math.sin(t * 3.1) * 0.05;
       }
       lightMat.emissiveIntensity = night * 3.5;
+      papis.forEach((p, i) => {
+        const seen = Math.atan2(viewer.y - p.at.y, Math.hypot(viewer.x - p.at.x, viewer.z - p.at.z));
+        if (seen > p.angle) papiColor.setXYZ(i, 1, 1, 1); else papiColor.setXYZ(i, 1, 0.2, 0.13);
+      });
+      papiColor.needsUpdate = true;
+      // Approach lights: soft by day, bright at night with a flash running in towards the runway twice a second.
+      const rabbit = 300 - ((t * 2) % 1) * 300, base = 0.55 + 0.45 * night;
+      approachLights.forEach((l, i) => {
+        const flash = night > 0 && l.order > 0 && Math.abs(l.order - rabbit) < 15;
+        if (flash) approachColor.setXYZ(i, 1, 1, 1); else approachColor.setXYZ(i, base, base * 0.95, base * 0.8);
+      });
+      approachColor.needsUpdate = true;
       taxiMat.emissiveIntensity = night * 4.5;
     },
   };

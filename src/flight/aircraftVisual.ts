@@ -195,5 +195,11 @@ export class AircraftVisual {
     if (this.flame) { this.flame.visible = a.burner; this.flame.scale.setScalar(0.85 + Math.random() * 0.3); }
   }
 
+  /**
+   * Cockpit view: the models have no interiors, so from the pilot's seat you'd see the insides of the fuselage and
+   * wings. Hide the airframe there; the propellers and rotor discs stay, turning in front of you.
+   */
+  setCockpit(on: boolean): void { this.model.visible = !on; }
+
   dispose(scene: THREE.Scene): void { scene.remove(this.root); }
 }

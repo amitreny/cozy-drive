@@ -85,3 +85,17 @@ body.titled .minimap { opacity: 0; }
 .tracker { position: absolute; right: 18px; top: 74px; max-width: 360px; font-size: 13px; display: none; pointer-events: none; }
 .tracker .trk { margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tracker .arrow { display: inline-block; color: var(--accent); width: 1.1em; text-align: center; transform-origin: 50% 55%; }
+/* Approach instrument: an ILS-style display above the bottom edge, between the info and speed panels. */
+.hud-approach { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: 330px; font-size: 13px; line-height: 1.45; display: none; }
+.hud-approach b { color: var(--accent); }
+.hud-approach kbd { background: #fff; border-radius: 5px; padding: 0 5px; border: 1px solid #d8ccb8; font-family: inherit; }
+.ap-text { font-size: 14px; margin-bottom: 6px; }
+.ap-ils { position: relative; height: 96px; margin: 0 auto 6px; width: 200px; border-radius: 10px; background: rgba(58,49,41,0.08); }
+.ap-loc { position: absolute; left: 12px; right: 30px; top: 50%; height: 0; border-top: 2px solid rgba(58,49,41,0.35); display: flex; justify-content: space-between; }
+.ap-gs { position: absolute; right: 12px; top: 8px; bottom: 8px; width: 0; border-left: 2px solid rgba(58,49,41,0.35); display: flex; flex-direction: column; justify-content: space-between; }
+.ap-loc i, .ap-gs i { display: block; width: 6px; height: 6px; border-radius: 50%; background: rgba(58,49,41,0.45); }
+.ap-loc i { margin-top: -4px; } .ap-gs i { margin-left: -4px; }
+.ap-dot { position: absolute; width: 14px; height: 14px; background: #3fae6a; border: 2px solid #fff; transform: translate(-50%, -50%) rotate(45deg); }
+.ap-loc .ap-dot { top: 0; } .ap-gs .ap-dot { left: 0; }
+.ap-plane { position: absolute; left: calc(50% - 9px); top: 50%; transform: translate(-50%, -50%); font-size: 18px; color: var(--accent); }
+.ap-cues div { margin-top: 2px; }

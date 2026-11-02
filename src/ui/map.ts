@@ -4,6 +4,12 @@ import { SURFACES } from '../world/surfaces';
 import { heightAt, PLAZA, surfaceAt, waterLevelAt, type WorldData } from '../world/terrainGen';
 
 const FOG = 256;
+
+/** Lines and dots drawn over both maps while flying: extended runway centrelines, distance marks, your track. */
+export interface MapGuides {
+  lines: { x0: number; z0: number; x1: number; z1: number; color: string; width: number; dash?: number[] }[];
+  dots: { x: number; z: number; color: string; r: number }[];
+}
 /** Top-down, north up: +z is up and +x is to the LEFT (three.js is right-handed, so east of a north-facing driver is -x). */
 export const MAP_FOG_VERSION = 2;
 
@@ -16,6 +22,7 @@ export class MapView {
   /** Places worth marking (airports, helipads, docks, businesses), and live pins (delivery destinations). */
   pois: { x: number; z: number; icon: string; name: string }[] = [];
   pins: () => { x: number; z: number; color: string }[] = () => [];
+  guides: () => MapGuides = () => ({ lines: [], dots: [] });
   private fogCtx: CanvasRenderingContext2D;
 
   constructor(root: HTMLElement, private w: WorldData, private vps: Viewpoint[], private gnomes: Place[], private progress: Progress, fogData?: string, fogMirrored = false) {
@@ -107,6 +114,14 @@ export class MapView {
       g.fillStyle = '#3a3129'; g.fillText(p.icon, px, py + 4.5);
       if (p.icon === '✈' || p.icon === '🛶' || p.icon === 'H') { g.fillStyle = '#3a3129'; g.fillText(p.name, px, py - 14); }
     }
+    const gd = this.guides(), scale = S / this.w.size;
+    for (const l of gd.lines) {
+      const [ax, ay] = toPx(l.x0, l.z0), [bx, by] = toPx(l.x1, l.z1);
+      g.strokeStyle = l.color; g.lineWidth = Math.max(1.5, l.width * scale * 3); g.setLineDash(l.dash ?? []);
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+    }
+    g.setLineDash([]);
+    for (const d of gd.dots) { const [px, py] = toPx(d.x, d.z); g.fillStyle = d.color; g.beginPath(); g.arc(px, py, d.r, 0, Math.PI * 2); g.fill(); }
     for (const pin of this.pins()) {
       const [px, py] = toPx(pin.x, pin.z);
       g.fillStyle = pin.color; g.strokeStyle = '#fff'; g.lineWidth = 2.5;

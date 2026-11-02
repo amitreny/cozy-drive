@@ -39,13 +39,15 @@ import { buildVillage } from './world/village';
 import { buildTown } from './world/town';
 import { loadTownModels } from './world/townModels';
 import { FlightSession } from './flight/session';
+import { APPROACH_RANGE, findApproach, type Approach } from './flight/approach';
+import { LandingGates } from './flight/landingGates';
 import type { AircraftSpec } from './flight/specs';
 import { Hangar } from './ui/hangar';
 import { Deliveries, type Carrier, type DeliveriesData } from './gameplay/deliveries';
 import { DeliveryMarkers } from './gameplay/deliveryMarkers';
 import { CAR_CAPACITY, cargoText, type Job } from './gameplay/jobs';
 import { JobBoard, Tracker } from './ui/jobBoard';
-import { allPlaces, nearPlace, type AirPlace, type Spot } from './world/airports';
+import { allPlaces, along, nearPlace, type AirPlace, type Spot } from './world/airports';
 import { buildAirports } from './world/airportsRender';
 
 interface SaveData { version: 1; worldVersion?: number; build: Build; assists: AssistLevel; pos: { x: number; z: number; yaw: number }; hours: number; progress?: ProgressData; fog?: string; mix?: AudioMix; station?: number; muted?: boolean; minimap?: boolean; minimapRotate?: boolean; fogVersion?: number; deliveries?: DeliveriesData }
@@ -115,6 +117,10 @@ async function boot(): Promise<void> {
   const places = allPlaces(summitRoad ? { x: summitRoad.xs[summitRoad.xs.length - 1], z: summitRoad.zs[summitRoad.zs.length - 1] } : null);
   const airportsView = buildAirports(RAPIER, physics, world, places);
   scene.add(airportsView.group);
+  // Landing guide (L toggles it while flying): the approach instrument, gates in the sky and map centrelines.
+  const gates = new LandingGates();
+  scene.add(gates.group);
+  let landingGuide = true, approach: Approach | null = null;
   // Deliveries: job boards at every business and the airfields' air-cargo offices.
   const deliveries = new Deliveries(world.lots, places, saved?.worldVersion === WORLD_VERSION ? saved?.deliveries : undefined);
   const markers = new DeliveryMarkers(world, deliveries.boards);
@@ -230,6 +236,26 @@ async function boot(): Promise<void> {
     ...world.lots.filter((l) => l.kind === 'shop').map((l) => ({ x: l.front[0], z: l.front[1], icon: '📋', name: l.name })),
   ];
   mapView.pins = () => deliveries.active.map((a) => ({ x: a.job.to.x, z: a.job.to.z, color: a.job.air ? '#5b8fd9' : '#2fa894' }));
+  // While flying an aeroplane, both maps show every runway's extended centreline (the one you're lined up for in
+  // coral, with a dot each kilometre) and a line ahead along your track, so you can see the two come together.
+  mapView.guides = () => {
+    const a = flight.aircraft;
+    if (!a || a.spec.kind !== 'plane' || !landingGuide) return { lines: [], dots: [] };
+    const lines: ReturnType<typeof mapView.guides>['lines'] = [], dots: ReturnType<typeof mapView.guides>['dots'] = [];
+    for (const p of places) {
+      const rw = p.runway;
+      if (!rw) continue;
+      for (const end of [1, -1] as const) {
+        const active = approach?.place === p && approach.end === end;
+        const [x0, z0] = along(rw, -end * rw.halfLen, 0), [x1, z1] = along(rw, -end * (rw.halfLen + APPROACH_RANGE * 0.6), 0);
+        lines.push({ x0, z0, x1, z1, color: active ? '#d9704f' : 'rgba(58,49,41,0.4)', width: active ? 2.5 : 1.5, dash: [6, 5] });
+        if (active) for (let k = 1; k <= 7; k++) { const [x, z] = along(rw, -end * (rw.halfLen + k * 1000), 0); dots.push({ x, z, color: '#d9704f', r: 3 }); }
+      }
+    }
+    const v = a.body.linvel(), sp = Math.hypot(v.x, v.z), p = a.curPos;
+    if (sp > 5) lines.push({ x0: p.x, z0: p.z, x1: p.x + (v.x / sp) * 3000, z1: p.z + (v.z / sp) * 3000, color: 'rgba(255,255,255,0.9)', width: 2, dash: [3, 4] });
+    return { lines, dots };
+  };
   const minimap = new MiniMap(ui, mapView, world, viewpoints, progress);
   minimap.rotate = saved?.minimapRotate ?? true;
   minimap.setVisible(saved?.minimap ?? true);
@@ -362,6 +388,13 @@ async function boot(): Promise<void> {
     const a = flight.aircraft!;
     const w = flight.wind.at(a.curPos.x, a.curPos.z, a.agl, { x: 0, y: 0, z: 0 });
     hud.updateFlight(dt, a, sky.hours, w);
+    if (input.consume('diffLock')) { landingGuide = !landingGuide; hud.toast(`Landing guide <b>${landingGuide ? 'on' : 'off'}</b> · L`); }
+    // The approach you're flying: picked by where you're going (your track), not just where the nose points.
+    const v = a.body.linvel(), track = Math.hypot(v.x, v.z) > 10 ? Math.atan2(v.x, v.z) : a.heading;
+    approach = landingGuide && a.spec.kind === 'plane' && !a.onGround
+      ? findApproach(places, a.curPos.x, a.curPos.y, a.curPos.z, track, (x, z) => heightAt(world, x, z)) : null;
+    hud.updateApproach(approach, a);
+    gates.update(approach);
     audio.updateAircraft(a, chase.mode === 'hood');
     if (input.consume('flaps')) { const f = flight.cycleFlaps(); if (a.spec.engine?.maxFlaps) hud.toast(`Flaps ${Math.round(f * a.spec.engine.maxFlaps * 180 / Math.PI)}°`); }
     const landed = a.onGround && a.groundSpeed < 1.5 && !a.crashed;
@@ -444,6 +477,8 @@ async function boot(): Promise<void> {
     if (input.consume('mute')) { audio.setMuted(!audio.muted); hud.toast(audio.muted ? 'Sound off' : 'Sound on'); persist(); }
     if (input.consume('settings') && !garage.open && !mapView.open) { settings.toggle(); loop.timeScale = settings.open ? 0 : 1; if (!settings.open) persist(); }
     if (input.consume('minimap')) { minimap.setVisible(!minimap.visible); persist(); }
+    if (!air) { approach = null; hud.updateApproach(null, null); gates.update(null); }
+    minimap.range = !air ? 320 : ac!.spec.kind === 'plane' ? 3000 : 1200;
     minimap.update(dt, focus.x, focus.z, focusYaw);
     if (input.consume('radio') && radio) hud.toast(`♪ <b>${radio.tune()}</b>`);
     if (ambience) {
@@ -473,6 +508,7 @@ async function boot(): Promise<void> {
     if (fv) {
       flight.update(dt, alpha);
       chase.update(dt, fv.root.position, fv.root.quaternion, ac!.airspeed, fv.size);
+      fv.setCockpit(chase.mode === 'hood');
       if (chase.mode === 'hood') { // cockpit: the pilot's eye, looking along the nose
         camera.position.copy(fv.eye).applyQuaternion(fv.root.quaternion).add(fv.root.position);
         camera.quaternion.copy(fv.root.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
@@ -496,7 +532,7 @@ async function boot(): Promise<void> {
     if (visual.model.setLights) visual.model.setLights({ night: night && !air, brake: air ? 0 : vehicle.appliedBrake, reverse: !air && vehicle.gear < 0 }, dt);
     else visual.model.headlights.forEach((m) => (m.emissiveIntensity = night ? 3 : 0.4));
     barriers.setNight(night ? 1 : 0); town.setNight(night ? 1 : 0);
-    airportsView.update(dt, flight.wind.at(focusPos.x, focusPos.z, 10, { x: 0, y: 0, z: 0 }), night ? 1 : 0);
+    airportsView.update(dt, flight.wind.at(focusPos.x, focusPos.z, 10, { x: 0, y: 0, z: 0 }), night ? 1 : 0, air ? ac!.curPos : camera.position);
 
     if (air) { flightTick(dt); particles.update(dt); saveTimer += dt; if (saveTimer > 20) { saveTimer = 0; persist(); } return; }
     // Near an airfield, helipad or dock: the hangar.

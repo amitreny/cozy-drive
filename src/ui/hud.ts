@@ -1,6 +1,7 @@
 import { SURFACES, TYRE_NAMES } from '../world/surfaces';
 import type { Vehicle } from '../vehicle/vehicle';
 import type { Aircraft } from '../flight/aircraft';
+import { approachSpeed, GLIDE, interceptHeading, type Approach } from '../flight/approach';
 
 const el = (tag: string, cls: string, parent: HTMLElement, html = '') => {
   const e = document.createElement(tag); e.className = cls; e.innerHTML = html; parent.appendChild(e); return e;
@@ -12,6 +13,7 @@ export class Hud {
   private info: HTMLElement; private prompt: HTMLElement; private help: HTMLElement;
   private acc = 0;
   private acornsEl: HTMLElement; private toasts: HTMLElement;
+  private approach: HTMLElement; private apText: HTMLElement; private apCues: HTMLElement; private locDot: HTMLElement; private gsDot: HTMLElement;
 
   constructor(root: HTMLElement) {
     const sp = el('div', 'panel hud-speed', root);
@@ -22,6 +24,14 @@ export class Hud {
     this.prompt = el('div', 'panel prompt', root);
     this.acornsEl = el('div', 'panel hud-acorns', root, '🌰 0');
     this.toasts = el('div', 'toasts', root);
+    this.approach = el('div', 'panel hud-approach', root);
+    this.apText = el('div', 'ap-text', this.approach);
+    const ils = el('div', 'ap-ils', this.approach);
+    const loc = el('div', 'ap-loc', ils, '<i></i><i></i><i></i><i></i><i></i>'), gs = el('div', 'ap-gs', ils, '<i></i><i></i><i></i><i></i><i></i>');
+    this.locDot = el('b', 'ap-dot', loc); this.gsDot = el('b', 'ap-dot', gs);
+    el('span', 'ap-plane', ils, '✈');
+    this.apCues = el('div', 'ap-cues', this.approach);
+    this.approach.style.display = 'none';
     this.help = el('div', 'panel help', root, `
       <b>Cozy Drive</b> · prototype<br>
       <kbd>W</kbd><kbd>S</kbd> drive / brake / reverse · <kbd>A</kbd><kbd>D</kbd> steer<br>
@@ -33,6 +43,7 @@ export class Hud {
       <kbd>E</kbd> at an airport, helipad or dock: hangar · deliveries at shops<br>
       <b>Flying:</b> <kbd>W</kbd><kbd>S</kbd> pitch · <kbd>A</kbd><kbd>D</kbd> roll (steer on the ground) · <kbd>Z</kbd><kbd>X</kbd> rudder<br>
       <kbd>R</kbd><kbd>F</kbd> throttle / collective / burner &amp; vent · <kbd>V</kbd> flaps · <kbd>Space</kbd> brakes · <kbd>E</kbd> park<br>
+      <kbd>L</kbd> landing guide (approach instrument, gates, map centrelines)<br>
       Drag the mouse to look around · <kbd>H</kbd> hide this<br>
       Gamepad: triggers, left stick, Y flip, B camera, Start garage`);
   }
@@ -47,6 +58,41 @@ export class Hud {
   }
 
   toggleHelp(): void { this.help.style.display = this.help.style.display === 'none' ? '' : 'none'; }
+
+  /**
+   * The approach instrument (an ILS-style display), shown while you're lined up for a runway: a needle for the
+   * centreline and one for the glide path, each a diamond that shows where the path is (fly towards it), and a few
+   * plain cues: the heading to steer, too high or low, the speed to fly, and when to set flap.
+   */
+  updateApproach(ap: Approach | null, a: Aircraft | null): void {
+    this.approach.style.display = ap ? 'block' : 'none';
+    if (!ap || !a || this.acc !== 0) return; // refresh with the rest of the instruments
+    const deg = 180 / Math.PI, compass = (r: number) => String(Math.round(((360 - r * deg) % 360 + 360) % 360)).padStart(3, '0');
+    const s = a.spec, vref = approachSpeed(s) * 3.6, kmh = a.airspeed * 3.6, flapsMax = s.engine?.maxFlaps ?? 0;
+    // Full scale: 2.5° either side of the centreline, 0.7° above or below the glide path, as on a real ILS.
+    const locX = Math.max(-1, Math.min(1, ap.loc / (2.5 / deg))), gsY = Math.max(-1, Math.min(1, ap.gs / (0.7 / deg)));
+    this.locDot.style.left = `${50 + locX * 46}%`; this.gsDot.style.top = `${50 + gsY * 44}%`;
+    const height = a.altitude - ap.elevation, cues: string[] = [];
+    if (ap.dist < 300 && height < 18) cues.push('Over the runway: throttle to idle (F), ease back (S) to flare');
+    else {
+      const off = ap.loc * deg;
+      cues.push(Math.abs(off) < 0.5 ? '✓ Lined up with the centreline'
+        : `${off > 0 ? '›' : '‹'} Steer ${off > 0 ? 'right' : 'left'}${Math.abs(off) < 1.5 ? ' a touch' : ''}: heading <b>${compass(interceptHeading(ap))}°</b>`);
+      const sink = (a.groundSpeed * Math.tan(GLIDE)).toFixed(1), band = Math.max(12, ap.pathHeight * 0.12);
+      cues.push(ap.above > band ? `↓ High by ${Math.round(ap.above)} m: descend faster than ${sink} m/s`
+        : ap.above < -band ? `↑ Low by ${Math.round(-ap.above)} m: level off, add power`
+        : `✓ On the glide path: descend at about ${sink} m/s`);
+    }
+    cues.push(kmh > vref + 25 ? `Slow down to <b>${Math.round(vref)} km/h</b>` : kmh < vref - 12 ? `Too slow: power up to <b>${Math.round(vref)} km/h</b>` : `✓ Speed good · ${Math.round(vref)} km/h`);
+    if (flapsMax) {
+      // A notch by 7 km, the second by 3.5 km, full by 1.5 km: each press of V is one notch.
+      const notch = ap.dist < 1500 ? 1 : ap.dist < 3500 ? 2 / 3 : ap.dist < 7000 ? 1 / 3 : 0;
+      const next = Math.min(1, Math.round(a.flapsTarget * 3 + 1) / 3);
+      if (a.flapsTarget < notch - 0.01) cues.push(`Flaps: press <kbd>V</kbd> for ${Math.round(next * flapsMax * deg)}°`);
+    }
+    this.apText.innerHTML = `<b>Runway ${ap.runway}</b> · ${ap.place.name}<br>${ap.dist > 0 ? `${(ap.dist / 1000).toFixed(1)} km to go` : 'over the runway'} · ${Math.round(Math.max(0, height))} m up`;
+    this.apCues.innerHTML = cues.map((c) => `<div>${c}</div>`).join('');
+  }
 
   showPrompt(text: string | null): void {
     this.prompt.style.display = text ? 'block' : 'none';

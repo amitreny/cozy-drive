@@ -78,6 +78,7 @@ To screenshot every car type in the garage: `npm run build && node tools/cars.mj
 | Rudder / helicopter pedals | Z / X | Right stick |
 | Throttle · collective · balloon burner (R) and vent (F) | R / F (hold) | Right / left trigger |
 | Flaps | V | Right stick click |
+| Landing guide (approach instrument, gates, map centrelines) | L | — |
 | Wheel brakes | Space | A |
 | Cockpit view | C | B |
 
