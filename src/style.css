@@ -85,17 +85,52 @@ body.titled .minimap { opacity: 0; }
 .tracker { position: absolute; right: 18px; top: 74px; max-width: 360px; font-size: 13px; display: none; pointer-events: none; }
 .tracker .trk { margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tracker .arrow { display: inline-block; color: var(--accent); width: 1.1em; text-align: center; transform-origin: 50% 55%; }
-/* Approach instrument: an ILS-style display above the bottom edge, between the info and speed panels. */
-.hud-approach { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: 330px; font-size: 13px; line-height: 1.45; display: none; }
-.hud-approach b { color: var(--accent); }
-.hud-approach kbd { background: #fff; border-radius: 5px; padding: 0 5px; border: 1px solid #d8ccb8; font-family: inherit; }
-.ap-text { font-size: 14px; margin-bottom: 6px; }
-.ap-ils { position: relative; height: 96px; margin: 0 auto 6px; width: 200px; border-radius: 10px; background: rgba(58,49,41,0.08); }
-.ap-loc { position: absolute; left: 12px; right: 30px; top: 50%; height: 0; border-top: 2px solid rgba(58,49,41,0.35); display: flex; justify-content: space-between; }
-.ap-gs { position: absolute; right: 12px; top: 8px; bottom: 8px; width: 0; border-left: 2px solid rgba(58,49,41,0.35); display: flex; flex-direction: column; justify-content: space-between; }
-.ap-loc i, .ap-gs i { display: block; width: 6px; height: 6px; border-radius: 50%; background: rgba(58,49,41,0.45); }
-.ap-loc i { margin-top: -4px; } .ap-gs i { margin-left: -4px; }
-.ap-dot { position: absolute; width: 14px; height: 14px; background: #3fae6a; border: 2px solid #fff; transform: translate(-50%, -50%) rotate(45deg); }
-.ap-loc .ap-dot { top: 0; } .ap-gs .ap-dot { left: 0; }
-.ap-plane { position: absolute; left: calc(50% - 9px); top: 50%; transform: translate(-50%, -50%); font-size: 18px; color: var(--accent); }
-.ap-cues div { margin-top: 2px; }
+/*
+ * Flight: a glass cockpit. Dark panels and monospaced readouts in the avionics colours: white for values, green for
+ * live data, cyan for labels, magenta for guidance, amber for cautions. The flight display (a canvas) sits bottom
+ * centre, the engine/systems panel bottom left, and the approach cues bottom right where the speedometer was.
+ */
+.avionics {
+  --av-bg: rgba(9, 13, 18, 0.86); --av-line: rgba(160, 190, 210, 0.2); --av-white: #eef3f6; --av-dim: #8a98a6;
+  --av-green: #3ef07a; --av-cyan: #3fd8f2; --av-magenta: #ff5ce8; --av-amber: #ffb52e;
+  --av-font: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+}
+.avionics .hud-speed { display: none; }
+/* The flight display sits in the bottom-right corner (where the car's speedometer is), out of the way of the aircraft
+   the chase camera keeps in the middle of the view. I hides the instruments. */
+:root { --pfd-scale: 0.82; }
+.hud-pfd { display: none; position: absolute; right: 18px; bottom: 18px; transform: scale(var(--pfd-scale)); transform-origin: 100% 100%; padding: 4px; }
+.hud-pfd canvas { display: block; }
+.avionics .hud-pfd { display: block; }
+.avionics.instruments-off .hud-pfd, .avionics.instruments-off .hud-info { display: none; }
+.avionics .hud-info, .avionics .hud-pfd, .avionics .hud-approach {
+  background: var(--av-bg); color: var(--av-white); font-family: var(--av-font); border-radius: 8px;
+  border: 1px solid var(--av-line); box-shadow: 0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+@media (max-width: 1240px) { :root { --pfd-scale: 0.7; } }
+@media (max-width: 960px) { :root { --pfd-scale: 0.55; } }
+
+.avionics .hud-info { min-width: 220px; font-size: 13px; line-height: 1.3; padding: 10px 12px; }
+.eicas .ac { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--av-line); }
+.eicas .ac small { display: block; font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--av-dim); }
+.eicas .row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.eicas .row > span { width: 72px; flex: none; font-size: 11px; letter-spacing: 0.08em; color: var(--av-cyan); }
+.eicas .bar { flex: 1; height: 7px; border: 1px solid var(--av-line); border-radius: 2px; background: rgba(255,255,255,0.04); overflow: hidden; }
+.eicas .bar > i { display: block; height: 100%; background: var(--av-green); }
+.avionics .hud-info .eicas b { margin-left: auto; min-width: 58px; text-align: right; color: var(--av-green); }
+.avionics .hud-info .eicas b.white { color: var(--av-white); }
+.avionics .hud-info .eicas b.cyan { color: var(--av-cyan); }
+.avionics .hud-info .eicas b.amber { color: var(--av-amber); }
+.avionics .hud-info .eicas b.magenta { color: var(--av-magenta); }
+
+/* Approach cues (the ILS needles themselves are on the flight display). */
+.hud-approach { position: absolute; right: 18px; bottom: 18px; width: 300px; font-size: 12px; line-height: 1.45; display: none; }
+/* Stacked above the flight display (308 px tall unscaled, with its padding), unless the instruments are hidden. */
+.avionics .hud-approach { bottom: calc(18px + 308px * var(--pfd-scale) + 10px); }
+.avionics.instruments-off .hud-approach { bottom: 18px; }
+.avionics .hud-approach b { color: var(--av-magenta); }
+.avionics .hud-approach kbd { background: #1c242d; color: var(--av-white); border-radius: 3px; padding: 0 5px; border: 1px solid var(--av-line); font-family: inherit; }
+.ap-text { font-size: 13px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--av-line); }
+.ap-cues div { margin-top: 3px; }
+.ap-cues .ok { color: var(--av-green); }
+.ap-cues .warn { color: var(--av-amber); }

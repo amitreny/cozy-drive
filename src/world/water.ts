@@ -18,7 +18,10 @@ float waves(vec2 p) {
 vec3 wPerturb(vec3 pos, vec3 nrm, float h) {
   vec3 sx = dFdx(pos), sy = dFdy(pos); vec3 r1 = cross(sy, nrm), r2 = cross(nrm, sx);
   float det = dot(sx, r1); vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-  return normalize(abs(det) * nrm - grad);
+  // At grazing angles near the horizon the derivatives can vanish: keep the flat normal there, never normalize(0),
+  // whose NaN the lighting turns into a NaN pixel that the bloom then smears over the whole screen.
+  vec3 n = abs(det) * nrm - grad;
+  return dot(n, n) > 1e-12 ? normalize(n) : nrm;
 }
 `;
 
@@ -27,6 +30,7 @@ export class Water {
   readonly group = new THREE.Group();
   readonly material: THREE.MeshStandardMaterial;
   private uTime = { value: 0 };
+  private sea: THREE.Mesh;
 
   constructor(w: WorldData, heightTex: THREE.Texture) {
     const mat = new THREE.MeshStandardMaterial({ color: 0x2f7f99, roughness: 0.05, metalness: 0, transparent: true });
@@ -48,15 +52,18 @@ export class Water {
           float foamRipple = smoothstep(0.55, 0.9, sin(wDepth * 9.0 - uTime * 1.4 + wn * 5.0) * 0.5 + 0.5) * (1.0 - smoothstep(0.3, 1.4, wDepth));
           float foam = clamp(foamEdge * 0.9 + foamRipple * 0.5, 0.0, 1.0);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.97, 0.96), foam);
-          diffuseColor.a = clamp(0.35 + smoothstep(0.0, 2.5, wDepth) * 0.6 + foam * 0.5, 0.0, 0.96);`)
+          diffuseColor.a = clamp(0.35 + smoothstep(0.0, 2.5, wDepth) * 0.6 + foam * 0.5, 0.0, 0.96);
+          // Open sea: opaque, so from high up there's no hint of where the seabed (the terrain) ends.
+          diffuseColor.a = mix(diffuseColor.a, 1.0, smoothstep(2.5, 6.0, wDepth));`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.04, 0.6, foam);')
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
           float wFade = 1.0 - smoothstep(60.0, 400.0, length(vViewPosition));
           normal = wPerturb(-vViewPosition, normal, waves(vWaterW.xz) * 0.08 * wFade);`);
     };
-    mat.customProgramCacheKey = () => 'water-v1';
+    mat.customProgramCacheKey = () => 'water-v3';
     this.material = mat;
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000), mat);
+    // The open sea: it follows the camera (see follow), so it reaches the horizon even from a jet 15 km up.
+    const sea = (this.sea = new THREE.Mesh(new THREE.PlaneGeometry(400000, 400000), mat));
     sea.rotation.x = -Math.PI / 2;
     sea.receiveShadow = true;
     this.group.add(sea);
@@ -66,6 +73,9 @@ export class Water {
       this.group.add(m);
     }
   }
+
+  /** Keep the sea centred under the camera (its waves and colours are worked out in world space, so nothing slides). */
+  follow(p: THREE.Vector3): void { this.sea.position.x = p.x; this.sea.position.z = p.z; }
 
   update(dt: number, env: THREE.Texture | null): void {
     this.uTime.value += dt;

@@ -17,13 +17,27 @@
 | Aeroplane | Gilang Romadhan | CC BY 3.0 | https://poly.pizza/m/9VeIc0cybp4 | The sport plane, `public/models/aircraft/sport.glb` |
 | Helicopter | Poly by Google | CC BY 3.0 | https://poly.pizza/m/cTzINMr0WdS | The helicopter, `public/models/aircraft/helicopter.glb` |
 | Helicopter (transport) | Zsky | CC BY 3.0 | https://poly.pizza/m/hG2Qr0A3zR | The Pelican, `public/models/aircraft/transport-heli.glb` |
+| Jet | jeremy | CC BY 3.0 | https://poly.pizza/m/6fyLMORhgGK | The Peregrine supersonic jet, `public/models/aircraft/jet.glb` |
 | Hot air balloon | Poly by Google | CC BY 3.0 | https://poly.pizza/m/7Fej0Jd3_Di | The balloon, `public/models/aircraft/balloon.glb` |
 | Twin turboprop rigged airplane | mfonasd | CC0 | https://opengameart.org/content/twin-turboprop-rigged-airplane-low-poly | The Heron airliner, `public/models/aircraft/turboprop.glb` (converted from the .blend by `tools/blend2glb.mjs`) |
 | Package | Quaternius | CC0 1.0 | https://poly.pizza/m/mWkgWyrCfM | Delivery parcels, `public/models/cargo/package.glb` |
 | Pallet | Quaternius | CC0 1.0 | https://poly.pizza/m/MwOFAOgOhg | Cargo pallets, `public/models/cargo/pallet.glb` |
+| Barn | Poly by Google | CC BY 3.0 | https://poly.pizza/m/aMjE4LE65Ae | Hangars at every airfield and strip (stand-ins until real hangar models are found), `public/models/world/barn.glb` |
+| Large Building | Kenney | CC0 1.0 | https://poly.pizza/m/sxXonOmtct | Longreach terminal (a row of them), `public/models/world/terminal.glb` |
+| Fire Station with Fire Trucks | Ivan Klus | CC BY 3.0 | https://poly.pizza/m/akzBrALzbei | Longreach fire station, `public/models/world/fire-station.glb` |
+| Fire Truck | Ivan Klus | CC BY 3.0 | https://poly.pizza/m/7iHJ519SwxG | Longreach's fire engine, `public/models/world/fire-truck.glb` |
+| Cargo Depot A | Kay Lousberg | CC0 1.0 | https://poly.pizza/m/Q8OC84mlJI | Longreach air-cargo depot, `public/models/world/cargo-depot.glb` |
+| Lighthouse | jeremy | CC BY 3.0 | https://poly.pizza/m/0SWQTv1whoA | Lantern Rock lighthouse, `public/models/world/lighthouse.glb` |
+| Airplane | Poly by Google | CC BY 3.0 | https://poly.pizza/m/fzIXe2paBN9 | The 787-size airliner parked at Longreach, `public/models/world/widebody.glb` |
+| Airplane | Poly by Google | CC BY 3.0 | https://poly.pizza/m/a3XrQkLNna9 | A320-size airliners parked at Longreach, `public/models/world/narrowbody.glb` |
+| Bus | jeremy | CC BY 3.0 | https://poly.pizza/m/bsvS0E1eo4R | Apron bus, `public/models/world/bus.glb` |
+| Truck | Quaternius | CC0 1.0 | https://poly.pizza/m/cXw6oiFtZ8 | Catering truck, `public/models/world/truck.glb` |
+| Shipping Container | Quaternius | CC0 1.0 | https://poly.pizza/m/dQXRtm5GbO | Containers at the cargo depot, `public/models/world/container.glb` |
+| Sail Boat | Quaternius | CC0 1.0 | https://poly.pizza/m/BgSZXwmm7k | Boats moored at the piers, `public/models/world/sailboat.glb` |
+| Palm Tree | Quaternius | CC0 1.0 | https://poly.pizza/m/A6cKJYFsIb | Palms at Longreach terminal, `public/models/world/palm.glb` |
 
 CC0 needs no attribution, but credit is given gladly. The original licence text ships next to the Kenney models.
 
 **CC0** (https://creativecommons.org/publicdomain/zero/1.0/) needs no attribution, but we credit it anyway. The turboprop is converted from Blender with its propellers left out (the game draws working ones), its flaps split off so they move, scaled to the Dash 8's span and repainted in the Heron's livery.
 
-**CC BY 3.0** (https://creativecommons.org/licenses/by/3.0/) needs attribution: the authors above are credited here and in the game's Hangar panel. The aircraft and cars are used as published, except that the game rescales them to real-world size, adds spinning propeller and rotor discs, repaints car bodies in the player's chosen colour and replaces window glass with its own. Car names in the game are our own; the models' real makes are named here only to credit them.
+**CC BY 3.0** (https://creativecommons.org/licenses/by/3.0/) needs attribution: the authors above are credited here and in the game's Hangar panel. The aircraft and cars are used as published, except that the game rescales them to real-world size, adds spinning propeller and rotor discs (and, on the jet, folding landing gear and afterburner flames, with its under-wing stores left off), repaints car bodies in the player's chosen colour and replaces window glass with its own. Car names in the game are our own; the models' real makes are named here only to credit them. The airport buildings, parked airliners, vehicles, boats, palms and the lighthouse are rescaled to fit their sites (each evenly, never stretched; the Kenney buildings at the town's scale). The air-cargo offices are the City Kit (Commercial) shop `building-e`.

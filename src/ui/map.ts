@@ -3,7 +3,8 @@ import type { Place, Viewpoint } from '../gameplay/places';
 import { SURFACES } from '../world/surfaces';
 import { heightAt, PLAZA, surfaceAt, waterLevelAt, type WorldData } from '../world/terrainGen';
 
-const FOG = 256;
+/** Fog-of-war resolution: 16 m a pixel over the 8 km world. */
+const FOG = 512;
 
 /** Lines and dots drawn over both maps while flying: extended runway centrelines, distance marks, your track. */
 export interface MapGuides {
@@ -55,12 +56,12 @@ export class MapView {
     return this.fogCtx.getImageData(Math.max(0, Math.min(FOG - 1, fx | 0)), Math.max(0, Math.min(FOG - 1, fz | 0)), 1, 1).data[3] < 100;
   }
 
-  /** The painted base map (1024², north up), painted on first use. */
+  /** The painted base map (4 m a pixel, north up), painted on first use. */
   baseCanvas(): HTMLCanvasElement { return (this.base ??= this.paint()); }
 
   /** Paint the base map once: relief shading, surface colours, water, contours, roads. */
   private paint(): HTMLCanvasElement {
-    const N = 1024, c = document.createElement('canvas'); c.width = c.height = N;
+    const N = Math.round(this.w.size / 4), c = document.createElement('canvas'); c.width = c.height = N;
     const g = c.getContext('2d')!, img = g.createImageData(N, N), half = this.w.size / 2, cell = this.w.size / N;
     for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
       const x = half - px * cell, z = half - py * cell, h = heightAt(this.w, x, z), lvl = waterLevelAt(this.w, x, z), i = (py * N + px) * 4;
@@ -135,7 +136,7 @@ export class MapView {
     g.restore();
     const found = this.gnomes.filter((x) => this.progress.found.has(x.id)).length;
     const views = this.vps.filter((v) => this.progress.found.has(v.id)).length;
-    this.side.innerHTML = `<h2>Island map</h2>
+    this.side.innerHTML = `<h2>Map of the islands</h2>
       <p>Garden gnomes: <b>${found} / ${this.gnomes.length}</b><br>Viewpoints: <b>${views} / ${this.vps.length}</b><br>Acorns: <b>🌰 ${this.progress.creative ? '∞' : this.progress.acorns}</b></p>
       <p class="hint">Stop inside a glowing ring at a ? to collect a postcard.</p>
       <div class="postcards">${this.progress.postcards.map((p) => `<figure><img src="${p.img}" alt=""><figcaption>${p.name}</figcaption></figure>`).join('') || '<i>No postcards yet</i>'}</div>

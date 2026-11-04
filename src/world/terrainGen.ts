@@ -1,3 +1,4 @@
+import { BEACH, inland, islandRadius, ISLANDS, MAIN_RADIUS, type Island } from './islands';
 import { Perlin2 } from './noise';
 import { AIRPORTS, along, inFillet, local, onPaving, type Rect } from './airports';
 import { placeLots, type Lot } from './lots';
@@ -6,7 +7,9 @@ import { limitGrade, MAX_GRADE, pinJunctions, sampleRoad, segDist, SMOOTHING, sm
 import { S, type SurfaceId } from './surfaces';
 
 /** Bump when generation changes so cached worlds are rebuilt. */
-export const WORLD_VERSION = 12;
+export const WORLD_VERSION = 14;
+/** The world is 8 × 8 km of sea: the main island at the centre and the outlying islands around it (islands.ts). */
+export const WORLD_SIZE = 8192;
 
 export interface Water { x: number; z: number; r: number; level: number }
 export interface WorldData {
@@ -25,23 +28,50 @@ export interface Regions { mountain: number; canyon: number; dunes: number; mars
 const ss = (e0: number, e1: number, v: number) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
 const near = (x: number, z: number, cx: number, cz: number, inner: number, outer: number) => ss(outer, inner, Math.hypot(x - cx, z - cz));
 
-// Layout of the 4 × 4 km island (+z north). See docs/02 for the regions.
+// Layout of the 4 × 4 km main island (+z north). See docs/02 for the regions, islands.ts for the archipelago.
 export const PLAZA = { x: 0, z: -350, r: 24 };
 export const POND = { x: 320, z: 1000, r: 55 }; // alpine tarn on the plateau east of the pass, seen from the summit
 export const LAKE = { x: -1250, z: 540, r: 150 };
-export const ISLAND_RADIUS = 1750;
+export const ISLAND_RADIUS = MAIN_RADIUS;
 /** Flat pad at the top of the Summit Road: the island's highest drivable point. */
 export const SUMMIT = { r: 9, cut: 4 };
 
+const WOODED = ISLANDS.filter((i) => i.forest);
 export function regionsAt(x: number, z: number): Regions {
+  let forest = near(x, z, -1150, 380, 280, 760);
+  for (const isl of WOODED) { const d = islandRadius(isl, x, z); if (d < 1) forest = Math.max(forest, isl.forest! * ss(1, 0.55, d)); }
   return {
     mountain: near(x, z, 200, 950, 220, 600), canyon: near(x, z, 1080, 230, 220, 560),
-    dunes: near(x, z, 830, -1050, 180, 520), marsh: near(x, z, -950, -900, 180, 520), forest: near(x, z, -1150, 380, 280, 760),
+    dunes: near(x, z, 830, -1050, 180, 520), marsh: near(x, z, -950, -900, 180, 520), forest,
   };
 }
 
-/** Natural terrain height before roads and flattening. */
+/** An outlying island's ground: a beach rising to gently rolling land and its hills; the sea floor (-7) elsewhere. */
+function islandHeight(P: Perlin2, isl: Island, x: number, z: number): number {
+  const reach = Math.max(isl.halfLen, isl.halfWid) + 120, dx = x - isl.cx, dz = z - isl.cz;
+  if (dx * dx + dz * dz > reach * reach) return -7;
+  const inl = inland(isl, x, z) + 55 * P.fbm(x * 0.0021 + 17, z * 0.0021 - 5, 3);
+  if (inl <= 0) return -7;
+  const land = ss(0, BEACH, inl);
+  let h = isl.base + isl.roll * (0.5 + 0.5 * P.fbm(x * 0.0019 + 31, z * 0.0019 - 11, 4)) + 1.5 * P.fbm(x * 0.011, z * 0.011, 2);
+  for (const hill of isl.hills) {
+    const d = Math.hypot(x - hill.x, z - hill.z);
+    if (d < hill.r) { const t = 1 - d / hill.r; h += hill.h * t * t * (3 - 2 * t) * (0.8 + 0.3 * P.ridged(x * 0.006 + 7, z * 0.006, 3)); }
+  }
+  return h * land + (1 - land) * -7;
+}
+
+/** Natural terrain height before roads and flattening: the main island, or the outlying island here, or the sea floor. */
 export function makeBaseHeight(P: Perlin2): (x: number, z: number, lakeLevels?: Map<object, number>) => number {
+  const main = mainHeight(P);
+  return (x, z, lakeLevels) => {
+    let h = main(x, z, lakeLevels);
+    for (const isl of ISLANDS) { const ih = islandHeight(P, isl, x, z); if (ih > h) h = ih; }
+    return h;
+  };
+}
+
+function mainHeight(P: Perlin2): (x: number, z: number, lakeLevels?: Map<object, number>) => number {
   return (x, z, lakeLevels) => {
     const r = Math.hypot(x, z);
     if (r > ISLAND_RADIUS + 250) return -7;
@@ -91,7 +121,7 @@ function classify(P: Perlin2, h: Float32Array, V: number, ix: number, iz: number
   return n1 > 0.4 ? S.Dirt : S.Grass;
 }
 
-export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (stage: string) => void): WorldData {
+export function generateWorld(seed = 7, size = WORLD_SIZE, cell = 2, onProgress?: (stage: string) => void): WorldData {
   const P = new Perlin2(seed), base = makeBaseHeight(P);
   const n = Math.round(size / cell), V = n + 1, half = size / 2;
   const heights = new Float32Array(V * V), surface = new Uint8Array(V * V);
@@ -148,7 +178,7 @@ export function generateWorld(seed = 7, size = 4096, cell = 2, onProgress?: (sta
     const raw = new Float32Array(xs.length);
     // Roads skirting the lake stay above its water (the water disc reaches 1.15 r); the margin leaves room to ramp up.
     const lakeFloor = (i: number) => (Math.hypot(xs[i] - LAKE.x, zs[i] - LAKE.z) < LAKE.r * 1.15 + def.width + 40 ? levels.get(LAKE)! + 0.7 : -Infinity);
-    for (let i = 0; i < xs.length; i++) raw[i] = Math.max(sampleGrid(heights, V, cell, half, xs[i], zs[i]), def.kind === 'boardwalk' ? 1.9 : 2.2, lakeFloor(i));
+    for (let i = 0; i < xs.length; i++) raw[i] = Math.max(sampleGrid(heights, V, cell, half, xs[i], zs[i]), def.minHeight ?? (def.kind === 'boardwalk' ? 1.9 : 2.2), lakeFloor(i));
     let hs = smoothProfile(raw, def.smoothing ?? SMOOTHING[def.kind], !!def.closed);
     for (let i = 0; i < hs.length; i++) hs[i] = Math.max(hs[i], lakeFloor(i));
     const pinned = pinJunctions(hs, xs, zs, roads, 60);

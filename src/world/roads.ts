@@ -9,6 +9,8 @@ export interface RoadDef {
   bankMax?: number;
   /** The road ends on a summit: its last point is pinned near the peak so the profile has to climb all the way up. */
   summit?: boolean;
+  /** Lowest the road may run (m): a causeway stays this far above the sea it crosses. */
+  minHeight?: number;
 }
 
 /** Max grade (rise/run) per road kind: highways are gentle, trails can be steep. */
@@ -56,6 +58,13 @@ export const ROADS: RoadDef[] = [
   { name: 'Boardwalk', kind: 'boardwalk', surface: S.Wood, width: 3.5, points: [[-950, -880], [-1020, -960], [-1100, -1000], [-1180, -985]] },
   { name: 'Summit Road', kind: 'road', surface: S.Asphalt, width: 6.5, maxGrade: 0.12, smoothing: 8, bankMax: 85, summit: true, points: SUMMIT_ROAD },
   { name: 'Forest Track', kind: 'track', surface: S.Gravel, width: 5, points: [[-1450, 400], [-1250, 330], [-1060, 370], [-960, 550], [-1010, 760], [-1200, 950]] },
+  // ---- Longreach (west across the strait, +x): a causeway off the Coastal Highway, then the island's roads ----
+  // The causeway is an embankment carved up out of the sea floor (the road's fill banks), 3.5 m above the water.
+  { name: 'Longreach Causeway', kind: 'highway', surface: S.Asphalt, width: 10, minHeight: 3.5, points: [[1450, 100], [1800, 60], [2150, 20], [2480, -40]] },
+  { name: 'Longreach Road', kind: 'road', surface: S.Asphalt, width: 7, points: [[2480, -40], [2680, -20], [2740, 500], [2800, 1000], [2880, 1500]] },
+  { name: 'Longreach South Road', kind: 'road', surface: S.Asphalt, width: 7, points: [[2680, -20], [2660, -600], [2700, -1200], [2790, -1800], [2870, -2200]] },
+  // ---- Gull Isle (north-east, no bridge): a lane from the strip past the hamlet to the pier ----
+  { name: 'Gull Haven Lane', kind: 'road', surface: S.Asphalt, width: 5.5, points: [[-3150, 2440], [-2900, 2420], [-2700, 2400], [-2532, 2372]] },
 ];
 
 export interface RoadPath { def: RoadDef; xs: Float32Array; zs: Float32Array; hs: Float32Array }

@@ -1,8 +1,8 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { addScaled, clamp, cross, dot, normalize, rotate, set, v3, type Q4, type V3 } from '../core/math';
 import { S, SURFACES, type SurfaceId } from '../world/surfaces';
-import { dragCoef, groundEffect, liftCoef, stallAngle } from './aero';
-import { density, G, RHO0, T0, type Wind } from './atmosphere';
+import { dragCoef, groundEffect, jetThrust, liftCoef, stallAngle, waveDrag } from './aero';
+import { density, G, RHO0, speedOfSound, T0, type Wind } from './atmosphere';
 import type { AircraftSpec, GearSpec, SurfaceSpec } from './specs';
 
 type Rapier = typeof RAPIER;
@@ -25,6 +25,8 @@ const WATER_RHO = 1000;
 const MAX_AILERON = 20 * deg, MAX_ELEVATOR = 24 * deg, MAX_RUDDER = 25 * deg, SERVO = 2.2;
 /** Full wheel braking, as a share of the load on a braked wheel. */
 const BRAKE = 0.55;
+/** A jet's throttle: past this point the lever goes through the gate into afterburner. */
+export const AB_GATE = 0.85;
 
 /** Nose-up angle a taildragger rests at on its three wheels (0 for tricycle gear, skids and baskets). */
 export function restPitch(spec: AircraftSpec): number {
@@ -56,6 +58,12 @@ export class Aircraft {
   private brakeEase = 1; private brakePitch = 0;
   /** Power the engine is making, 0..1 (lags the throttle in a turbine). */
   power = 0;
+  /** A jet's afterburner, 0..1 (it lights once the core is near full power). */
+  reheat = 0;
+  /** Retractable gear: the lever, and where the legs are (1 = down and locked). Airbrake: how far out, 0..1. */
+  gearDown = true; gearPos = 1; airbrakePos = 0;
+  /** Airspeed as a share of the speed of sound here, and the wave-drag factor it brings. */
+  mach = 0; private wave = 1;
   // Telemetry
   airspeed = 0; groundSpeed = 0; alpha = 0; beta = 0; vs = 0; altitude = 0; agl = 0; heading = 0; pitchAngle = 0; bank = 0;
   onGround = false; onWater = false; stall = 0; thrust = 0;
@@ -66,8 +74,15 @@ export class Aircraft {
   private lastV = v3(); private hasLastV = false;
   private s = { p: v3(), v: v3(), w: v3(), air: v3(), wind: v3(), fx: v3(), up: v3(), fw: v3(), lf: v3(), a: v3(), b: v3(), c: v3(), r: v3(), pv: v3(), n: v3(), sp: v3(), ld: v3() };
 
+  /** The physics world's length unit before a jet raised it. */
+  private lengthUnit: number;
+
   constructor(private R: Rapier, private world: RAPIER.World, spec: AircraftSpec, pos: V3, yaw: number, private env: FlightEnv) {
     this.spec = spec;
+    // Rapier caps every body's speed at 400 m/s per length unit (Mach 1.2 at sea level). A jet needs more: 800 m/s.
+    // Raised only while one flies, as the unit also scales the contact tolerances the cars are tuned with.
+    this.lengthUnit = world.lengthUnit;
+    if (spec.engine?.jet) world.lengthUnit = Math.max(world.lengthUnit, 2);
     const desc = R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setCanSleep(false).setCcdEnabled(true)
       .setLinearDamping(0).setAngularDamping(spec.kind === 'balloon' ? 0.5 : 0.02);
     this.body = world.createRigidBody(desc);
@@ -113,6 +128,7 @@ export class Aircraft {
     this.body.setRotation(restRotation(this.spec, yaw), true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true); this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.throttle = 0; this.collective = 0; this.trim = 0; this.rollTrim = 0; this.crashed = null; this.hasLastV = false; this.power = 0;
+    this.reheat = 0; this.gearDown = true; this.gearPos = 1; this.airbrakePos = 0;
     this.groundPitch = restPitch(this.spec); this.groundTrim = 0;
     const eng = this.spec.engine;
     this.engineTime = running ? 60 : 0; this.rpm = running && eng ? eng.rpm * (eng.idle ?? 0.3) : 0;
@@ -121,7 +137,18 @@ export class Aircraft {
     this.capture(); this.capture();
   }
 
-  dispose(): void { this.world.removeRigidBody(this.body); }
+  dispose(): void { this.world.removeRigidBody(this.body); this.world.lengthUnit = this.lengthUnit; }
+
+  /**
+   * The gear lever (retractable gear only). It won't come up with weight on the wheels, and won't move at all above
+   * the gear's speed limit (the doors and legs would be torn off). Returns whether it moved.
+   */
+  setGear(down: boolean): boolean {
+    const rg = this.spec.retractGear;
+    if (!rg || down === this.gearDown || (!down && this.onGround) || this.airspeed > rg.maxSpeed) return false;
+    this.gearDown = down;
+    return true;
+  }
 
   capture(): void {
     const p = this.body.translation(), r = this.body.rotation();
@@ -147,6 +174,8 @@ export class Aircraft {
     set(s.air, s.v.x - s.wind.x, s.v.y - s.wind.y, s.v.z - s.wind.z);
     const rho = density(p.y);
     this.airspeed = Math.hypot(s.air.x, s.air.y, s.air.z);
+    this.mach = this.airspeed / speedOfSound(p.y);
+    this.wave = waveDrag(this.mach);
     this.groundSpeed = Math.hypot(s.v.x, s.v.z);
     this.vs = s.v.y;
     this.heading = Math.atan2(s.fw.x, s.fw.z);
@@ -169,14 +198,24 @@ export class Aircraft {
     if (input.brake < 0.05 || !this.onGround) this.brakePitch = this.pitchAngle;
     this.brakeEase = assist === 'relaxed' && spec.kind === 'plane' && this.onGround
       ? clamp(1 - (this.brakePitch - this.pitchAngle - 1.5 * deg) / (3 * deg), 0.2, 1) : 1;
+    const rg = spec.retractGear;
+    if (rg) this.gearPos += clamp((this.gearDown ? 1 : 0) - this.gearPos, -dt / rg.time, dt / rg.time);
+    const ab = spec.airbrake;
+    if (ab) {
+      // Spoilers deploy by themselves on the runway at idle power: on touchdown, and for the rejected take-off.
+      const groundSpoilers = !!ab.liftDump && this.onGround && this.throttle < 0.1 && this.groundSpeed > 15;
+      this.airbrakePos += clamp((input.brake > 0.1 || groundSpoilers ? 1 : 0) - this.airbrakePos, -dt / 1.5, dt / 1.5);
+    }
     this.stepGear(dt, input, rho);
     if (spec.floats) this.stepFloats(dt, water);
     if (spec.kind === 'plane') this.stepPlane(dt, input, assist, rho);
     else if (spec.kind === 'heli') this.stepHeli(dt, input, assist, rho);
     else this.stepBalloon(dt, input, rho);
 
-    // Fuselage, gear and strut drag along each body axis.
-    const [cx, cy, cz] = spec.bodyCdA, vx = dot(s.air, s.lf), vy = dot(s.air, s.up), vz = fwdAir, half = 0.5 * rho * this.airspeed * dt;
+    // Fuselage, gear and strut drag along each body axis (wave drag on top near Mach 1), retractable gear while it's
+    // down, and the airbrake.
+    const [cx, cy, cz0] = spec.bodyCdA, vx = dot(s.air, s.lf), vy = dot(s.air, s.up), vz = fwdAir, half = 0.5 * rho * this.airspeed * dt * this.wave;
+    const cz = cz0 + (rg ? rg.drag * this.gearPos : 0) + (ab?.drag ?? 0) * this.airbrakePos;
     const fx = -half * cx * vx, fy = -half * cy * vy, fz = -half * cz * vz;
     body.applyImpulse({ x: s.lf.x * fx + s.up.x * fy + s.fw.x * fz, y: s.lf.y * fx + s.up.y * fy + s.fw.y * fz, z: s.lf.z * fx + s.up.z * fy + s.fw.z * fz }, true);
 
@@ -190,6 +229,17 @@ export class Aircraft {
     const s = this.s, body = this.body, spec = this.spec;
     let contacts = 0;
     const speedFw = dot(s.v, s.fw);
+    if (this.gearPos < 0.98) {
+      // Gear up (or on its way): no wheels to land on. Touch the ground like this and it's a belly landing.
+      for (const g of this.gear) { g.contact = false; g.comp = g.prev = 0; g.load = 0; g.anchored = false; g.inWater = false; }
+      this.onGround = false;
+      if (this.agl < 12) for (const h of spec.hull) for (let k = 0; k < 4; k++) {
+        rotate(s.a, this.curRotOf(), set(s.b, h.pos[0] + h.half[0] * (k & 1 ? 1 : -1), h.pos[1] - h.half[1], h.pos[2] + h.half[2] * (k & 2 ? 1 : -1)));
+        const x = s.p.x + s.a.x, z = s.p.z + s.a.z;
+        if (s.p.y + s.a.y < Math.max(this.env.groundAt(x, z), this.env.waterLevelAt(x, z)) + 0.05) { this.crashed = this.crashed ?? 'gear up'; return; }
+      }
+      return;
+    }
     for (const g of this.gear) {
       const gs = g.spec, travel = gs.travel;
       rotate(s.a, this.curRotOf(), set(s.b, gs.pos[0], gs.pos[1] + travel, gs.pos[2]));
@@ -306,7 +356,7 @@ export class Aircraft {
 
   // ---------------------------------------------------------------- aeroplane
   private stepPlane(dt: number, input: FlightInput, assist: FlightAssist, rho: number): void {
-    const s = this.s, spec = this.spec, eng = spec.engine!, body = this.body;
+    const s = this.s, spec = this.spec, eng = spec.engine!;
     this.throttle = clamp(this.throttle + input.lift * dt * 0.6, 0, 1);
     this.flaps += clamp((eng.maxFlaps ? this.flapsTarget : 0) - this.flaps, -dt * 0.4, dt * 0.4);
 
@@ -314,7 +364,7 @@ export class Aircraft {
     const p = dot(s.w, s.fw), qr = -dot(s.w, s.lf), r = -dot(s.w, s.up);
     const wings = spec.surfaces.filter(isWing);
     const wingSpan = Math.sqrt(spec.surfaces.filter((x) => x.control === 'aileronL').reduce((a, x) => a + x.area * 2 * x.aspect, 0) || 1);
-    const wingRef = wings[0];
+    const wingRef = wings[0], gLimit = spec.handling?.gLimit;
     const stallA = stallAngle(wingRef.aspect, wingRef.clMax + 0.45 * this.flaps) - (wingRef.incidence ?? 0) + (wingRef.alpha0 ?? 0);
     this.stall = clamp((this.alpha - (stallA - 4 * deg)) / (4 * deg), 0, 1) * (this.onGround ? 0 : 1);
 
@@ -323,19 +373,26 @@ export class Aircraft {
     const fast = clamp((this.airspeed - 8) / 20, 0, 1);
     if (assist === 'relaxed' && !this.onGround) {
       // Rate command, attitude hold: release the stick and the aircraft holds its attitude; wings come back level.
-      const pitchRate = spec.handling?.pitchRate ?? 0.45, rollRate = spec.handling?.rollRate ?? 1.2;
+      const pitchRate = spec.handling?.pitchRate ?? 0.45, rollRate = spec.handling?.rollRate ?? 1.2, agile = !!spec.handling?.agile;
       let qT = input.pitch * pitchRate;
       if (this.alpha > stallA - 3 * deg) qT = Math.min(qT, -(this.alpha - (stallA - 3 * deg)) * 4); // stall protection
+      // A fly-by-wire jet's g limiter: a pitch rate of q at speed V pulls about 1 + Vq/g.
+      const v = Math.max(this.airspeed, 30);
+      if (gLimit) qT = clamp(qT, -0.4 * gLimit * G / v, (gLimit - 1) * G / v);
       const level = (0.5 * rollRate) / 1.2;
+      // Released, the wings come back level (from any bank, even inverted). An agile jet has no bank limit, so with
+      // the stick held it rolls right round.
       const pT = input.roll !== 0 ? input.roll * rollRate : clamp(-this.bank * 0.9, -level, level);
-      const bankLimit = 55 * deg;
+      const bankLimit = agile ? Infinity : 55 * deg;
       const pT2 = Math.abs(this.bank) > bankLimit && Math.sign(pT) === Math.sign(this.bank) ? 0 : pT;
-      this.trim = clamp(this.trim + (qT - qr) * dt * 1.5, -1, 1);
-      pitchCmd = clamp(this.trim + (qT - qr) * 2.2, -1, 1);
+      // An agile jet's pitch loop is stiffer, so the g comes on in a moment rather than over seconds.
+      const [kI, kP] = agile ? [5, 4] : [1.5, 2.2];
+      this.trim = clamp(this.trim + (qT - qr) * dt * kI, -1, 1);
+      pitchCmd = clamp(this.trim + (qT - qr) * kP, -1, 1);
       // Aileron trim (the integral part) cancels the engine's torque roll: without it the wings settle a little
       // left-wing-down and the aircraft slowly turns left. Held while you're rolling.
       if (input.roll === 0) this.rollTrim = clamp(this.rollTrim + (pT2 - p) * dt * 1.2, -0.3, 0.3);
-      rollCmd = clamp(this.rollTrim + (pT2 - p) * 1.6, -1, 1);
+      rollCmd = clamp(this.rollTrim + (pT2 - p) * (agile ? 2.4 : 1.6), -1, 1);
       yawCmd = clamp(input.yaw - this.beta * 4 - r * 0.6 * fast + rollCmd * 0.15, -1, 1); // turn coordinator + yaw damper
     } else if (assist === 'relaxed') {
       // On the runway or the water: the stick moves a held attitude (up to ~10° nose-up for the rotation, so no tail
@@ -360,10 +417,47 @@ export class Aircraft {
       rollCmd = input.roll; yawCmd = input.yaw;
     }
     if (this.onGround) { this.trim *= 1 - dt; this.rollTrim = 0; } else { this.groundPitch = clamp(this.pitchAngle, -2 * deg, 10 * deg); this.groundTrim = 0; }
+    // Fly-by-wire gain scheduling: above the corner speed (where full stick at the stall angle pulls the g limit) the
+    // control computer scales the surfaces back with the dynamic pressure, so the stick asks for g, not deflection.
+    const fbw = gLimit ? Math.min(1, (gLimit * spec.mass * G) / (wings.reduce((a, x) => a + x.area, 0) * wingRef.clMax) / Math.max(1, 0.5 * rho * this.airspeed ** 2)) : 1;
     const servo = (cur: number, want: number) => cur + clamp(want - cur, -SERVO * dt, SERVO * dt);
-    this.da = servo(this.da, rollCmd * MAX_AILERON);
-    this.de = servo(this.de, -pitchCmd * MAX_ELEVATOR);
-    this.dr = servo(this.dr, yawCmd * MAX_RUDDER);
+    this.da = servo(this.da, rollCmd * MAX_AILERON * fbw);
+    this.de = servo(this.de, -pitchCmd * MAX_ELEVATOR * fbw);
+    this.dr = servo(this.dr, yawCmd * MAX_RUDDER * fbw);
+    const slip = eng.jet ? this.stepJet(dt, rho) : this.stepProp(dt, rho);
+
+    // ---- Lifting surfaces ----
+    let wingAlpha = 0;
+    for (const surf of wings) wingAlpha += this.surfaceForce(surf, dt, rho, 0, wingSpan, 0);
+    const meanWing = wings.length ? wingAlpha / wings.length : 0;
+    for (const surf of spec.surfaces) if (!isWing(surf)) this.surfaceForce(surf, dt, rho, surf.slipstream ? slip * 0.7 : 0, wingSpan, surf.downwash ? meanWing * 0.4 : 0);
+  }
+
+  /**
+   * Afterburning turbofans. The lever's first 85 % sets the core (it spools up over about four seconds, quicker
+   * down); through the gate the afterburner lights once the core is near full power, and burns as far as you push.
+   * Returns the slipstream over the tail (none: the jets blow out behind it).
+   */
+  private stepJet(dt: number, rho: number): number {
+    const s = this.s, eng = this.spec.engine!, jet = eng.jet!, body = this.body, idle = eng.idle ?? 0.6;
+    this.engineTime += dt;
+    const lightOff = 3, cranking = this.engineTime < lightOff;
+    const core = cranking ? 0 : Math.min(1, this.throttle / AB_GATE), burn = cranking ? 0 : clamp((this.throttle - AB_GATE) / (1 - AB_GATE), 0, 1);
+    this.power += (core - this.power) * Math.min(1, dt * (core > this.power ? 0.7 : 1));
+    this.reheat += ((this.power > 0.9 ? burn : 0) - this.reheat) * Math.min(1, dt * 2.5);
+    // Core speed (%): the starter winds it to ~20 %, it lights and settles at idle (60 %), and follows the power.
+    const rpmTarget = cranking ? 22 * this.engineTime / lightOff : eng.rpm * (idle + (1 - idle) * this.power);
+    this.rpm += (rpmTarget - this.rpm) * Math.min(1, dt * 1.5);
+    const T = cranking ? 0 : jetThrust(jet, this.power, this.reheat, rho / RHO0, this.mach);
+    this.thrust = T;
+    rotate(s.a, this.curRotOf(), set(s.b, ...eng.propPos));
+    body.applyImpulseAtPoint({ x: s.fw.x * T * dt, y: s.fw.y * T * dt, z: s.fw.z * T * dt }, { x: s.p.x + s.a.x, y: s.p.y + s.a.y, z: s.p.z + s.a.z }, true);
+    return 0;
+  }
+
+  /** Piston engine or turboprop and its propeller. Returns the slipstream speed over the tail. */
+  private stepProp(dt: number, rho: number): number {
+    const s = this.s, eng = this.spec.engine!, body = this.body;
 
     // ---- Propeller: power-limited thrust, capped by static thrust; slipstream over the tail. ----
     const vf = Math.max(0, dot(s.air, s.fw));
@@ -390,12 +484,7 @@ export class Aircraft {
     // Engine torque reaction rolls the aircraft a little to the left at high power and low speed.
     const torque = -(power * eng.power) / ((eng.rpm * 2 * Math.PI) / 60) * 0.25;
     body.applyTorqueImpulse({ x: s.fw.x * torque * dt, y: s.fw.y * torque * dt, z: s.fw.z * torque * dt }, true);
-
-    // ---- Lifting surfaces ----
-    let wingAlpha = 0;
-    for (const surf of wings) wingAlpha += this.surfaceForce(surf, dt, rho, 0, wingSpan, 0);
-    const meanWing = wings.length ? wingAlpha / wings.length : 0;
-    for (const surf of spec.surfaces) if (!isWing(surf)) this.surfaceForce(surf, dt, rho, surf.slipstream ? slip * 0.7 : 0, wingSpan, surf.downwash ? meanWing * 0.4 : 0);
+    return slip;
   }
 
   /** Lift and drag of one surface at its own position (rotation adds local flow). Returns its angle of attack. */
@@ -428,8 +517,10 @@ export class Aircraft {
     const clMax = surf.clMax + (surf.flaps ? 0.45 * this.flaps : 0);
     let ge = { drag: 1, lift: 1 };
     if (isWing(surf)) ge = groundEffect(Math.max(0.05, py - Math.max(this.env.groundAt(px, pz), this.env.waterLevelAt(px, pz))) / wingSpan);
-    const cl = liftCoef(alpha, surf.aspect, clMax) * ge.lift;
-    const cd = dragCoef(alpha, cl, surf.aspect, surf.cd0 + Math.abs(delta) * 0.01 + (surf.flaps ? this.flaps * 0.025 : 0), surf.e ?? 0.75, clMax, ge.drag);
+    // Spoilers break up the flow over the wing: less lift (so a higher stall speed while they're out).
+    const spoiled = isWing(surf) ? 1 - (this.spec.airbrake?.liftDump ?? 0) * this.airbrakePos : 1;
+    const cl = liftCoef(alpha, surf.aspect, clMax) * ge.lift * spoiled;
+    const cd = dragCoef(alpha, cl, surf.aspect, surf.cd0 * this.wave + Math.abs(delta) * 0.01 + (surf.flaps ? this.flaps * 0.025 : 0), surf.e ?? 0.75, clMax, ge.drag);
     const Q = 0.5 * rho * V2 * surf.area;
     // Lift ⟂ local flow, in the plane of normal and chord; drag along the flow.
     const ux = vx / V, uy = vy / V, uz = vz / V, nd = s.n.x * ux + s.n.y * uy + s.n.z * uz;

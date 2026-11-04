@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { WORLD_MODEL_FILES } from './worldModels';
 
 /** Kenney City Kit buildings and details, aircraft and cargo models (see CREDITS.md). Loaded once at boot. */
 const BASE = `${import.meta.env.BASE_URL}models/`;
@@ -44,7 +45,9 @@ export async function loadTownModels(): Promise<void> {
   await Promise.all([
     loadKit(loader, 'kenney-suburban', [...sub, 'fence', 'fence-low', 'planter', 'driveway-long', 'path-stones-short'], ['variation-a', 'variation-b', 'variation-c']),
     loadKit(loader, 'kenney-commercial', [...com, 'detail-awning-wide', 'detail-awning', 'detail-parasol-a', 'detail-parasol-b'], ['variation-a', 'variation-b']),
-    ...['trainer', 'seaplane', 'biplane', 'sport', 'helicopter', 'balloon', 'turboprop', 'transport-heli'].map(async (f) => { scenes.set(`aircraft/${f}`, (await loader.loadAsync(`${BASE}aircraft/${f}.glb`)).scene); }),
+    ...['trainer', 'seaplane', 'biplane', 'sport', 'helicopter', 'balloon', 'turboprop', 'transport-heli', 'jet'].map(async (f) => { scenes.set(`aircraft/${f}`, (await loader.loadAsync(`${BASE}aircraft/${f}.glb`)).scene); }),
+    // Airport buildings, parked airliners, ground vehicles, boats and the lighthouse (worldModels.ts).
+    ...WORLD_MODEL_FILES.map(async (f) => { scenes.set(f, (await loader.loadAsync(`${BASE}${f}.glb`)).scene); }),
     ...['package', 'pallet'].map(async (f) => { const s = (await loader.loadAsync(`${BASE}cargo/${f}.glb`)).scene; scenes.set(`cargo/${f}`, s); parts.set(`cargo/${f}`, flatten(s)); }),
   ]);
 }

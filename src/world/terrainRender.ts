@@ -44,10 +44,20 @@ export class TerrainRenderer {
   private meshes: THREE.InstancedMesh[] = [];
   private lastX = Infinity; private lastZ = Infinity;
   private per: number; private half: number;
+  /** Chunks whose ground lies wholly under the opaque open sea (deeper than 6 m): never drawn. */
+  private drowned: Uint8Array;
 
   constructor(w: WorldData) {
     const V = w.n + 1;
     this.per = w.size / CHUNK; this.half = w.size / 2;
+    // Most of the archipelago's 8 km square is sea: skip its floor (the water shader is opaque past 6 m deep).
+    this.drowned = new Uint8Array(this.per * this.per);
+    const k = CHUNK / w.cell;
+    for (let cz = 0; cz < this.per; cz++) for (let cx = 0; cx < this.per; cx++) {
+      let top = -Infinity;
+      for (let iz = cz * k; iz <= (cz + 1) * k && top < -6; iz++) for (let ix = cx * k; ix <= (cx + 1) * k; ix++) top = Math.max(top, w.heights[iz * V + ix]);
+      this.drowned[cz * this.per + cx] = top < -6 ? 1 : 0;
+    }
     const heightTex = new THREE.DataTexture(w.heights, V, V, THREE.RedFormat, THREE.FloatType);
     const surfTex = new THREE.DataTexture(w.surface, V, V, THREE.RedFormat, THREE.UnsignedByteType);
     this.heightTex = heightTex; this.surfTex = surfTex;
@@ -95,6 +105,7 @@ export class TerrainRenderer {
     this.lastX = cam.x; this.lastZ = cam.z;
     const counts = this.meshes.map(() => 0), m4 = new THREE.Matrix4();
     for (let cz = 0; cz < this.per; cz++) for (let cx = 0; cx < this.per; cx++) {
+      if (this.drowned[cz * this.per + cx]) continue;
       const x0 = cx * CHUNK - this.half, z0 = cz * CHUNK - this.half;
       const d = Math.hypot(x0 + CHUNK / 2 - cam.x, z0 + CHUNK / 2 - cam.z);
       const l = LODS.findIndex((lod) => d < lod.dist);

@@ -1,6 +1,6 @@
 import { load, save } from '../core/storage';
 import { scatter as makeScatter, type Scatter } from './scatter';
-import { generateWorld, WORLD_VERSION, type WorldData } from './terrainGen';
+import { generateWorld, WORLD_SIZE, WORLD_VERSION, type WorldData } from './terrainGen';
 
 export interface LoadedWorld { world: WorldData; scatter: Scatter }
 
@@ -8,8 +8,9 @@ export interface LoadedWorld { world: WorldData; scatter: Scatter }
 export async function loadWorld(seed: number, onStage: (s: string) => void): Promise<LoadedWorld> {
   const key = `world-v${WORLD_VERSION}-s${seed}`;
   const cached = await load<LoadedWorld>(key);
-  if (cached?.world?.heights instanceof Float32Array && cached.scatter?.count) return cached;
-  onStage('Building the island (first launch only)…');
+  // A cache from another size of world (e.g. built mid-change by a hot reload) is rebuilt, not trusted.
+  if (cached?.world?.heights instanceof Float32Array && cached.scatter?.count && cached.world.size === WORLD_SIZE && cached.world.heights.length === (cached.world.n + 1) ** 2) return cached;
+  onStage('Building the islands (first launch only)…');
   let result: LoadedWorld;
   try {
     result = await new Promise<LoadedWorld>((resolve, reject) => {
@@ -22,7 +23,7 @@ export async function loadWorld(seed: number, onStage: (s: string) => void): Pro
       worker.postMessage({ seed });
     });
   } catch {
-    const world = generateWorld(seed, 4096, 2, onStage);
+    const world = generateWorld(seed, WORLD_SIZE, 2, onStage);
     result = { world, scatter: makeScatter(world) };
   }
   void save(key, result);

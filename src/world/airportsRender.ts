@@ -1,9 +1,10 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { aimDistance } from '../flight/approach';
-import { along, inRect, local, type AirPlace, type Rect } from './airports';
+import { along, CODES, inRect, local, type AirPlace, type Building, type Prop } from './airports';
 import { S } from './surfaces';
 import { heightAt, waterLevelAt, type WorldData } from './terrainGen';
+import { placeModel } from './worldModels';
 
 const deg = Math.PI / 180;
 
@@ -81,17 +82,33 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
   // Landing-aid lights keep the same size on screen however far away they are (they must read from kilometres
   // out). Each kind is one point cloud, coloured light by light, so dozens of them cost two draw calls.
   const papis: { at: THREE.Vector3; angle: number }[] = [];
-  const approachLights: { at: THREE.Vector3; order: number }[] = [];
+  const approachLights: { at: THREE.Vector3; order: number; reach: number }[] = [];
+  /** Lighthouse lanterns: a slow flash every few seconds at night, seen from far out at sea. */
+  const beacons: THREE.Vector3[] = [];
   const socks: { pivot: THREE.Group; sock: THREE.Group }[] = [];
+  /** Per-place model groups, culled by distance. */
+  const sites: { group: THREE.Group; x: number; z: number; r: number }[] = [];
+  let site = group;
 
   for (const ap of places) {
     const rw = ap.runway;
     if (rw) {
-      const L = rw.halfLen, W = rw.halfWid;
+      const L = rw.halfLen, W = rw.halfWid, big = W / 15, airliner = L >= 1200;
       if (rw.surface === S.Asphalt) {
         for (let a = -L + 60; a < L - 60; a += 50) stripe(rw, a, a + 30, 0, 0.9, paint);                 // centreline
         for (const sgn of [-1, 1]) stripe(rw, -L + 3, L - 3, sgn * (W - 1.2), 0.9, paint);                  // edges
-        for (const end of [-1, 1]) for (let k = -3; k <= 3; k++) if (k !== 0) stripe(rw, end * (L - 6), end * (L - 36), k * 3.2, 1.8, paint); // piano keys
+        // Piano keys across the threshold: as many 1.8 m bars as the runway's width takes.
+        const keys = Math.floor((W - 3) / 3.2);
+        for (const end of [-1, 1]) for (let k = -keys; k <= keys; k++) if (k !== 0) stripe(rw, end * (L - 6), end * (L - 36), k * 3.2, 1.8, paint);
+        if (airliner) for (const end of [-1, 1]) {
+          // An airliner runway's touchdown zone: the big aiming-point blocks at the aim point, and pairs of bars
+          // every 150 m either side of the centreline for the first 900 m.
+          const aim = aimDistance(L);
+          for (const sgn of [-1, 1]) stripe(rw, end * (L - aim + 30), end * (L - aim - 30), sgn * W * 0.42, 8, paint);
+          for (const d of [150, 450, 600, 750, 900]) for (const sgn of [-1, 1]) for (const k of [0, 1, 2].slice(0, d < 500 ? 3 : d < 700 ? 2 : 1)) {
+            stripe(rw, end * (L - d + 11), end * (L - d - 11), sgn * (W * 0.42 + (k - 1) * 3), 1.8, paint);
+          }
+        }
       } else {
         // Grass strip: white edge boards every 50 m and at the corners.
         for (let a = -L; a <= L; a += 50) for (const sgn of [-1, 1]) { const [x, z] = along(rw, a, sgn * (W + 1)); box(x, z, rw.dir, 1.6, 0.35, 0.25, 0xf4efe6, undefined, false); }
@@ -99,8 +116,8 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
       // Runway numbers near each threshold, read from the approach.
       rw.designators.forEach((num, i) => {
         const end = i === 0 ? -1 : 1, [x, z] = along(rw, end * (L - (rw.surface === S.Asphalt ? 52 : 25)), 0);
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(9, 14), new THREE.MeshStandardMaterial({ map: textTexture(num, 128, 192, '#f2f0e8', null, '700 150px Trebuchet MS, sans-serif'), transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -3 }));
-        mesh.rotation.x = -Math.PI / 2; mesh.rotation.z = rw.dir + (end < 0 ? 0 : Math.PI);
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(9 * Math.max(1, big), 14 * Math.max(1, big)), new THREE.MeshStandardMaterial({ map: textTexture(num, 128, 192, '#f2f0e8', null, '700 150px Trebuchet MS, sans-serif'), transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -3 }));
+        mesh.rotation.x = -Math.PI / 2; mesh.rotation.z = rw.dir + (end < 0 ? Math.PI : 0); // upright for a pilot landing over this threshold
         mesh.position.set(x, heightAt(w, x, z) + 0.07, z); group.add(mesh);
       });
       // Taxiway centrelines in yellow, curving through the turns, and edge lights along the runway (they glow at night).
@@ -110,8 +127,9 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
         if (Math.abs(Math.sin(tx.dir - rw.dir)) < 0.5) continue; // the parallel taxiway never meets the runway
         // Hold-short line where each taxiway meets the runway, across its width: dashed bars on the runway side,
         // solid on the side where you hold.
-        const [ta] = local(rw, tx.cx, tx.cz), hw = tx.halfWid;
-        for (const [k, dashed] of [[4, true], [4.6, true], [5.4, false], [6, false]] as const) {
+        const [ta] = local(rw, tx.cx, tx.cz), hw = tx.halfWid, hold = CODES[ap.code].hold;
+        for (const [k0, dashed] of [[0, true], [0.6, true], [1.4, false], [2, false]] as const) {
+          const k = hold + k0;
           if (!dashed) stripe(rw, ta - hw, ta + hw, side * (W + k), 0.25, yellow, 0.06);
           else for (let a = ta - hw; a < ta + hw - 0.5; a += 2) stripe(rw, a, Math.min(a + 1.2, ta + hw), side * (W + k), 0.25, yellow, 0.06);
         }
@@ -132,15 +150,17 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
           box(x, z, rw.dir, 1.6, 0.45, 0.6, 0x3a3f44, y, false);
           papis.push({ at: new THREE.Vector3(x, y + 0.6, z), angle });
         });
-        // Approach lights (asphalt runways): a line along the extended centreline with a crossbar 150 m out.
+        // Approach lights (asphalt runways): a line along the extended centreline with a crossbar 150 m out; an
+        // airliner runway's run out 900 m (a full CAT I system) with a second crossbar at 300 m. Out over the sea
+        // they stand on the water, as on piles.
         if (rw.surface !== S.Asphalt) continue;
-        for (let d = 30; d <= 300; d += 30) {
-          const [x, z] = along(rw, -end * (L + d), 0);
-          approachLights.push({ at: new THREE.Vector3(x, heightAt(w, x, z) + 0.8, z), order: d });
-        }
-        for (const c of [-15, -10, -5, 5, 10, 15]) {
-          const [x, z] = along(rw, -end * (L + 150), c);
-          approachLights.push({ at: new THREE.Vector3(x, heightAt(w, x, z) + 0.8, z), order: -1 });
+        const reach = airliner ? 900 : 300, bar = airliner ? 22 : 15;
+        const lightAt = (x: number, z: number) => new THREE.Vector3(x, Math.max(heightAt(w, x, z), waterLevelAt(w, x, z)) + 0.8, z);
+        for (let d = 30; d <= reach; d += 30) { const [x, z] = along(rw, -end * (L + d), 0); approachLights.push({ at: lightAt(x, z), order: d, reach }); }
+        for (const d of airliner ? [150, 300] : [150]) for (let c = -bar; c <= bar; c += 5) {
+          if (Math.abs(c) < 3) continue;
+          const [x, z] = along(rw, -end * (L + d), c);
+          approachLights.push({ at: lightAt(x, z), order: -1, reach });
         }
       }
       // Windsock beside the runway's middle.
@@ -155,27 +175,14 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
       }
       socks.push({ pivot, sock });
     }
-    // Buildings.
-    for (const b of ap.buildings) {
-      const y = heightAt(w, b.cx, b.cz);
-      if (b.type === 'hangar') hangar(b, y);
-      else if (b.type === 'tower') {
-        box(b.cx, b.cz, b.dir, 3.2, 9, 3.2, 0xe9e2d4, y);
-        const cab = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.3, 2.4, 8), new THREE.MeshStandardMaterial({ color: 0x9cc6d8, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.85 }));
-        cab.position.set(b.cx, y + 10.2, b.cz); group.add(cab);
-        const roof = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 2.9, 0.4, 8), new THREE.MeshStandardMaterial({ color: 0xc8432f })); roof.position.set(b.cx, y + 11.6, b.cz); group.add(roof);
-      } else {
-        const m = box(b.cx, b.cz, b.dir, b.halfWid * 2, b.type === 'office' ? 4.2 : 3, b.halfLen * 2, b.type === 'office' ? 0xf2e3c6 : 0xb9a07e, y);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(b.halfWid, b.halfLen) + 0.6, 2.4, 4), new THREE.MeshStandardMaterial({ color: 0x4f6d7a, flatShading: true }));
-        roof.rotation.y = b.dir + Math.PI / 4; roof.scale.set(1, 1, b.halfLen / b.halfWid); roof.position.set(b.cx, y + m.geometry.parameters.height + 1.2, b.cz); roof.castShadow = true; group.add(roof);
-        const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 1.1), new THREE.MeshStandardMaterial({ map: textTexture(b.type === 'office' ? `${ap.name} · Air Cargo & Café` : `${ap.name}`, 640, 108, '#fff4e0', '#3d6e8f', '700 46px Georgia, serif') }));
-        const toward = local({ cx: b.cx, cz: b.cz, dir: b.dir }, ap.spawn.x, ap.spawn.z)[1] >= 0 ? 1 : -1;
-        // On the long wall that faces the apron.
-        const [ox, oz] = along({ cx: b.cx, cz: b.cz, dir: b.dir }, 0, toward * (b.halfWid + 0.06));
-        sign.position.set(ox, y + 3.4, oz); sign.rotation.y = b.dir + (toward > 0 ? -Math.PI / 2 : Math.PI / 2);
-        group.add(sign);
-      }
-    }
+    // Buildings and scenery: published models fitted to their footprints (worldModels.ts).
+    // Each place's models go in their own group, hidden beyond the fog (update) so far airports cost nothing.
+    site = new THREE.Group(); group.add(site);
+    let reach = 0;
+    for (const o of [...ap.buildings.map((b) => ({ x: b.cx, z: b.cz })), ...ap.props]) reach = Math.max(reach, Math.hypot(o.x - ap.spawn.x, o.z - ap.spawn.z));
+    sites.push({ group: site, x: ap.spawn.x, z: ap.spawn.z, r: reach + 120 });
+    for (const b of ap.buildings) building(ap, b);
+    for (const p of ap.props) prop(p);
     // Helipad: a white ring and an H.
     if (ap.pad) {
       const { x, z, r } = ap.pad, y = heightAt(w, x, z) + 0.06;
@@ -195,20 +202,48 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
     }
   }
 
-  function hangar(b: Rect, y: number): void {
-    const len = b.halfWid * 2, wid = b.halfLen * 2, h = 6;
-    box(b.cx, b.cz, b.dir, wid, h, len, 0xd8d2c4, y);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x8a9aa3, roughness: 0.6, metalness: 0.3, side: THREE.DoubleSide, flatShading: true });
-    const r2 = new THREE.Group(); r2.position.set(b.cx, y + h, b.cz); r2.rotation.y = b.dir;
-    // Arched roof: a half cylinder along the hangar, squashed to a gentle curve.
-    const arc = new THREE.Mesh(new THREE.CylinderGeometry(wid / 2, wid / 2, len, 16, 1, true, -Math.PI / 2, Math.PI), roofMat);
-    arc.rotation.x = Math.PI / 2; arc.castShadow = true;
-    const squash = new THREE.Group(); squash.scale.set(1, 0.45, 1); squash.add(arc); r2.add(squash);
-    group.add(r2);
-    // Big doors on the apron side.
-    const door = new THREE.Mesh(new THREE.PlaneGeometry(wid * 0.82, h * 0.9), new THREE.MeshStandardMaterial({ color: 0x5f6f78, roughness: 0.7 }));
-    const [dx, dz] = along({ cx: b.cx, cz: b.cz, dir: b.dir }, len / 2 + 0.05, 0);
-    door.position.set(dx, y + h * 0.45, dz); door.rotation.y = b.dir; group.add(door);
+  /** A solid box (an oriented cuboid collider) where a model stands, so cars and aircraft can't pass through it. */
+  function solid(x: number, z: number, y: number, yaw: number, size: THREE.Vector3): void {
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    physics.createCollider(R.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2).setTranslation(x, y + size.y / 2, z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+  }
+  /** A painted sign board on a building's front wall (`a` metres out from its centre), `up` metres high. */
+  function sign(text: string, b: { cx: number; cz: number; dir: number }, a: number, up: number, width: number): void {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(width, width / 6), new THREE.MeshStandardMaterial({ map: textTexture(text, 768, 128, '#fff4e0', '#3d6e8f', '700 52px Georgia, serif') }));
+    const [x, z] = along(b, a + 0.08, 0);
+    m.position.set(x, up, z); m.rotation.y = b.dir; site.add(m);
+  }
+
+  function building(ap: AirPlace, b: Building): void {
+    const y = heightAt(w, b.cx, b.cz), at = { x: b.cx, y, z: b.cz };
+    if (b.type === 'terminal') {
+      // A row of office blocks along the frontage, fronts on the apron line: the terminal building.
+      const probe = placeModel('terminal', at, b.dir, { height: b.height });
+      if (!probe) return;
+      const unit = probe.size.x, n = Math.max(1, Math.floor((b.halfWid * 2) / unit)), front = b.halfLen - probe.size.z / 2;
+      for (let i = 0; i < n; i++) {
+        const [x, z] = along(b, front, (i - (n - 1) / 2) * unit), m = placeModel('terminal', { x, y: heightAt(w, x, z), z }, b.dir, { height: b.height })!;
+        site.add(m.object);
+      }
+      const [cx, cz] = along(b, front, 0);
+      solid(cx, cz, y, b.dir, new THREE.Vector3(n * unit, probe.size.y, probe.size.z));
+      sign(`${ap.name}`, b, front + probe.size.z / 2, y + probe.size.y * 0.62, Math.min(24, probe.size.y * 2.2)); // a name board across the upper floors
+      return;
+    }
+    const m = placeModel(b.type, at, b.dir, { width: b.halfWid * 2, height: b.height, length: b.halfLen * 2 });
+    if (!m) return;
+    site.add(m.object);
+    solid(b.cx, b.cz, y, b.dir, m.size);
+    if (b.type === 'office') sign(`${ap.name} · Air Cargo & Café`, b, m.size.z / 2, y + m.size.y * 0.3, Math.min(9, m.size.x * 0.9));
+    if (b.type === 'lighthouse') beacons.push(new THREE.Vector3(b.cx, y + m.size.y * 0.86, b.cz));
+  }
+
+  function prop(p: Prop): void {
+    const water = p.model === 'sailboat', y = water ? waterLevelAt(w, p.x, p.z) - 0.15 : heightAt(w, p.x, p.z);
+    const m = placeModel(p.model, { x: p.x, y, z: p.z }, p.yaw, { length: p.length, height: p.length }); // a palm fits by height
+    if (!m) return;
+    site.add(m.object);
+    if (p.model === 'container') solid(p.x, p.z, y, p.yaw, m.size);
   }
 
   // Runway lights: one instanced mesh; bright only at night.
@@ -222,20 +257,24 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
   group.add(tm);
 
   const glow = glowTexture();
-  const cloud = (pts: THREE.Vector3[], px: number) => {
+  const cloud = (pts: THREE.Vector3[], px: number, additive = false) => {
     const g = new THREE.BufferGeometry().setFromPoints(pts);
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pts.length * 3).fill(1), 3));
-    const m = new THREE.Points(g, new THREE.PointsMaterial({ size: px, sizeAttenuation: false, map: glow, vertexColors: true, transparent: true, depthWrite: false, fog: false }));
+    const m = new THREE.Points(g, new THREE.PointsMaterial({ size: px, sizeAttenuation: false, map: glow, vertexColors: true, transparent: true, depthWrite: false, fog: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending }));
     m.frustumCulled = false; m.renderOrder = 2; group.add(m);
     return g.attributes.color as THREE.BufferAttribute;
   };
   const papiColor = cloud(papis.map((p) => p.at), 10), approachColor = cloud(approachLights.map((l) => l.at), 7);
+  const beaconColor = beacons.length ? cloud(beacons, 26, true) : null; // additive: a dark lantern adds nothing
 
   let t = 0;
   return {
     group,
     update(dt, wind, night, viewer) {
       t += dt;
+      // Draw a place's buildings only within the fog, which opens out with height (as in main.ts).
+      const seeTo = 7000 + Math.max(0, viewer.y) * 6;
+      for (const st of sites) st.group.visible = Math.hypot(st.x - viewer.x, st.z - viewer.z) - st.r < seeTo;
       const sp = Math.hypot(wind.x, wind.z), dir = Math.atan2(wind.x, wind.z);
       for (const s of socks) {
         // The sock streams downwind, drooping when the breeze is light, with a little flutter.
@@ -249,13 +288,19 @@ export function buildAirports(R: typeof RAPIER, physics: RAPIER.World, w: WorldD
       });
       papiColor.needsUpdate = true;
       // Approach lights: soft by day, bright at night with a flash running in towards the runway twice a second.
-      const rabbit = 300 - ((t * 2) % 1) * 300, base = 0.55 + 0.45 * night;
+      const phase = (t * 2) % 1, base = 0.55 + 0.45 * night;
       approachLights.forEach((l, i) => {
-        const flash = night > 0 && l.order > 0 && Math.abs(l.order - rabbit) < 15;
+        const flash = night > 0 && l.order > 0 && Math.abs(l.order - (1 - phase) * l.reach) < 15;
         if (flash) approachColor.setXYZ(i, 1, 1, 1); else approachColor.setXYZ(i, base, base * 0.95, base * 0.8);
       });
       approachColor.needsUpdate = true;
       taxiMat.emissiveIntensity = night * 4.5;
+      // The lighthouse: dark by day; at dusk and night a warm flash every five seconds, fading in and out.
+      if (beaconColor) {
+        const pulse = Math.max(0, Math.cos(((t % 5) / 5) * Math.PI * 2)) ** 6, k = Math.min(1, night * 1.5) * (0.15 + 0.85 * pulse);
+        beacons.forEach((_, i) => beaconColor.setXYZ(i, k, k * 0.92, k * 0.7));
+        beaconColor.needsUpdate = true;
+      }
     },
   };
 }

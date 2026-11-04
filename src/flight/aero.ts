@@ -31,6 +31,25 @@ export function dragCoef(alpha: number, cl: number, aspect: number, cd0: number,
   return cd0 + induced + stalled;
 }
 
+/**
+ * Wave drag: how much the zero-lift drag grows near and past the speed of sound. Nothing below Mach 0.8; it climbs
+ * through the transonic drag rise to 2.6× at Mach 1.05 (the "sound barrier"), then eases off as the shock waves
+ * sweep back (about 1.8× at Mach 2), as measured on fighters of the F-16 and Typhoon class.
+ */
+export function waveDrag(mach: number): number {
+  if (mach <= 1.05) return 1 + 1.6 * smooth(0.8, 1.05, mach);
+  return 2.6 * (1.05 / mach) ** 0.6;
+}
+
+/**
+ * Thrust (N) of an afterburning turbofan: `power` is the core's spool-up (0 idle .. 1 full dry thrust), `reheat` the
+ * afterburner (0..1, burning on top of full dry). It falls with the air's density (σ = ρ/ρ0) and gains from ram
+ * pressure as the speed builds, which is what lets a fighter go supersonic high up rather than low down.
+ */
+export function jetThrust(jet: { dry: number; wet: number }, power: number, reheat: number, sigma: number, mach: number): number {
+  return (jet.dry * (0.05 + 0.95 * power) + reheat * (jet.wet - jet.dry)) * sigma ** 0.9 * (1 + 0.2 * mach * mach);
+}
+
 /** Ground effect within about a span of the ground: less induced drag, a little more lift (Wieselsberger/McCormick). */
 export function groundEffect(heightOverSpan: number): { drag: number; lift: number } {
   const h = Math.max(0.02, heightOverSpan), r = (16 * h) ** 2;

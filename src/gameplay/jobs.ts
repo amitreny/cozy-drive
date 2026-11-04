@@ -1,4 +1,5 @@
 import type { AirPlace } from '../world/airports';
+import { landmassAt } from '../world/islands';
 import { residents, type BusinessType, type Lot } from '../world/lots';
 import { mulberry32 } from '../world/noise';
 
@@ -82,14 +83,16 @@ export function boardJobs(board: Board, lots: Lot[], places: AirPlace[], batch: 
     }
     return jobs;
   }
-  const kinds = WHAT[board.business!], homes = lots.filter((l) => l.kind === 'house' && l.id !== board.id);
-  const partners = lots.filter((l) => l.kind === 'shop' && l.business && (SUPPLIES[board.business!] ?? []).includes(l.business));
+  // Road deliveries stay on the board's landmass: a car can't reach an island without a causeway.
+  const land = landmassAt(from.x, from.z), reachable = (l: Lot) => landmassAt(l.front[0], l.front[1]) === land;
+  const kinds = WHAT[board.business!], homes = lots.filter((l) => l.kind === 'house' && l.id !== board.id && reachable(l));
+  const partners = lots.filter((l) => l.kind === 'shop' && l.business && reachable(l) && (SUPPLIES[board.business!] ?? []).includes(l.business));
   for (let k = 0; k < 4; k++) {
     const cargo = kinds[Math.floor(rnd() * kinds.length)];
     // Mostly nearby (0.3–2.5 km), sometimes across the island; a third of supply runs go to a partner business.
     let target: Lot | undefined;
     if (partners.length && rnd() < 0.35) target = partners[Math.floor(rnd() * partners.length)];
-    for (let tries = 0; !target && tries < 30; tries++) {
+    for (let tries = 0; !target && homes.length && tries < 30; tries++) {
       const h = homes[Math.floor(rnd() * homes.length)], d = Math.hypot(h.front[0] - from.x, h.front[1] - from.z);
       if (d > 250 && (d < 2500 || rnd() < 0.25)) target = h;
     }

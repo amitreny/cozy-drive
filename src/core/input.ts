@@ -3,12 +3,12 @@ import { clamp } from './math';
 /** Continuous driving controls, already smoothed so digital keys feel analog. */
 export interface DriveControls { throttle: number; brake: number; steer: number; handbrake: number }
 
-export type ButtonAction = 'flip' | 'garage' | 'camera' | 'help' | 'mute' | 'pressureDown' | 'pressureUp' | 'driveMode' | 'diffLock' | 'cruise' | 'map' | 'autopilot' | 'radio' | 'settings' | 'minimap' | 'interact' | 'flaps';
+export type ButtonAction = 'flip' | 'garage' | 'camera' | 'help' | 'mute' | 'pressureDown' | 'pressureUp' | 'driveMode' | 'diffLock' | 'cruise' | 'map' | 'autopilot' | 'radio' | 'settings' | 'minimap' | 'interact' | 'flaps' | 'instruments';
 /** Flight axes, -1..1: pitch + = nose up (S / stick back), roll + = right, yaw + = right (X), lift + = more power (R). */
 export interface FlightControls { pitch: number; roll: number; yaw: number; lift: number; brake: number }
 
 const KEYMAP: Record<string, ButtonAction> = {
-  KeyR: 'flip', KeyG: 'garage', KeyC: 'camera', KeyH: 'help', KeyN: 'mute', KeyM: 'map', KeyP: 'autopilot', KeyT: 'radio', Escape: 'settings', Tab: 'minimap', KeyE: 'interact', Enter: 'interact', KeyV: 'flaps',
+  KeyR: 'flip', KeyG: 'garage', KeyC: 'camera', KeyH: 'help', KeyN: 'mute', KeyM: 'map', KeyP: 'autopilot', KeyT: 'radio', Escape: 'settings', Tab: 'minimap', KeyE: 'interact', Enter: 'interact', KeyV: 'flaps', KeyI: 'instruments',
   BracketLeft: 'pressureDown', BracketRight: 'pressureUp', KeyF: 'driveMode', KeyL: 'diffLock', KeyK: 'cruise',
 };
 // Standard gamepad mapping: 3=Y, 2=X, 1=B, 9=start, 8=back, 4/5 bumpers, 0=A.

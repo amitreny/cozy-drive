@@ -28,6 +28,8 @@ export const VOICES: Record<string, EngineVoice> = {
   pelican: { cylinders: 12, exhaustHz: 250, brightness: 1.0, pattern: [1], rough: 0.02, level: 0.7 }, // twin turbines, deeper
   // The airliner's turboprops: a smooth turbine drone that rises to a whine with power.
   heron: { cylinders: 12, exhaustHz: 260, brightness: 1.1, pattern: [1], rough: 0.015, level: 0.7 },
+  // The jet's turbofans: a high, thin compressor whine over the exhaust roar (that's a noise channel of its own).
+  peregrine: { cylinders: 12, exhaustHz: 320, brightness: 1.35, pattern: [1], rough: 0.01, level: 0.4 },
 };
 
 /** Car sounds: synthesized engine (AudioWorklet, oscillator fallback), intake, tyres, skids, wind; plus the mix buses. */
@@ -41,6 +43,7 @@ export class CarAudio {
   private surfF!: BiquadFilterNode; private surfG!: GainNode;
   private skidF!: BiquadFilterNode; private skidG!: GainNode;
   private rotorG!: GainNode; private rotorLfo!: OscillatorNode; private burnerG!: GainNode;
+  private jetF!: BiquadFilterNode; private jetG!: GainNode; private white!: AudioBuffer;
   private windG!: GainNode; private surfMod!: GainNode; private surfLp!: BiquadFilterNode; private flutter = 1;
   private load = 0;
   mix: AudioMix = { ...DEFAULT_MIX };
@@ -106,6 +109,29 @@ export class CarAudio {
     const burnF = ctx.createBiquadFilter(); burnF.type = 'bandpass'; burnF.frequency.value = 380; burnF.Q.value = 0.6;
     this.burnerG = ctx.createGain(); this.burnerG.gain.value = 0;
     src().connect(burnF).connect(this.burnerG).connect(this.buses.engine);
+    // Jet exhaust: a broad roar that opens up with thrust and deepens in afterburner.
+    this.jetF = ctx.createBiquadFilter(); this.jetF.type = 'lowpass'; this.jetF.frequency.value = 400; this.jetF.Q.value = 0.4;
+    this.jetG = ctx.createGain(); this.jetG.gain.value = 0;
+    src().connect(this.jetF).connect(this.jetG).connect(this.buses.engine);
+    this.white = white;
+  }
+
+  /** A sonic boom: the double thump of the shock wave's front and tail (an N-wave) going past. */
+  boom(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const t = ctx.currentTime;
+    for (const [at, level] of [[0, 1], [0.16, 0.8]]) {
+      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      n.buffer = this.white; f.type = 'lowpass'; f.frequency.value = 160;
+      g.gain.setValueAtTime(0, t + at); g.gain.linearRampToValueAtTime(1.6 * level, t + at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + 1.3);
+      n.connect(f).connect(g).connect(this.buses.effects); n.start(t + at); n.stop(t + at + 1.4);
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(70, t + at); o.frequency.exponentialRampToValueAtTime(30, t + at + 0.5);
+      og.gain.setValueAtTime(0.8 * level, t + at); og.gain.exponentialRampToValueAtTime(0.001, t + at + 0.6);
+      o.connect(og).connect(this.buses.effects); o.start(t + at); o.stop(t + at + 0.65);
+    }
   }
 
   /** Aircraft sounds: engine (or turbine) and propeller, rotor whop, burner, wind over the airframe, wheels on the runway. */
@@ -128,10 +154,14 @@ export class CarAudio {
     this.rotorG.gain.setTargetAtTime(s.kind === 'heli' ? 0.35 + 0.25 * this.load : 0, t, 0.1);
     if (s.rotor) this.rotorLfo.frequency.setTargetAtTime((a.rpm / 60) * 2, t, 0.2);
     this.burnerG.gain.setTargetAtTime(a.burner ? 0.5 : 0, t, 0.04);
+    const jet = !!s.engine?.jet;
+    this.jetG.gain.setTargetAtTime(jet ? (0.12 + 0.5 * a.power + 0.7 * a.reheat) * (a.rpm > 30 ? 1 : a.rpm / 30) * (inside ? 0.5 : 1) : 0, t, 0.15);
+    this.jetF.frequency.setTargetAtTime(jet ? 300 + 900 * a.power - 200 * a.reheat : 400, t, 0.2);
     const roll = a.onGround && !a.onWater ? Math.min(1, a.groundSpeed / 20) * 0.12 : 0;
     this.surfF.frequency.setTargetAtTime(160, t, 0.1); this.surfG.gain.setTargetAtTime(roll, t, 0.1);
     this.skidG.gain.setTargetAtTime(0, t, 0.1);
-    this.windG.gain.setTargetAtTime(Math.min(1, (a.airspeed / 55) ** 2) * (inside ? 0.18 : 0.38), t, 0.2);
+    // An airbrake out roughens the airflow: more rush.
+    this.windG.gain.setTargetAtTime(Math.min(1, (a.airspeed / 55) ** 2) * (inside ? 0.18 : 0.38) * (1 + 0.6 * a.airbrakePos), t, 0.2);
   }
 
   /** Older browsers without AudioWorklet: the original two-oscillator engine. */
@@ -212,6 +242,6 @@ export class CarAudio {
     const hard = surf.particle === null || surf.name === 'Ice';
     this.skidG.gain.setTargetAtTime(hard ? Math.min(1, Math.max(0, skid - 2) / 6) * 0.12 : 0, t, 0.05);
     this.windG.gain.setTargetAtTime(Math.min(1, (speed / 45) ** 2) * (inside ? 0.12 : 0.3), t, 0.2);
-    this.rotorG.gain.setTargetAtTime(0, t, 0.1); this.burnerG.gain.setTargetAtTime(0, t, 0.05);
+    this.rotorG.gain.setTargetAtTime(0, t, 0.1); this.burnerG.gain.setTargetAtTime(0, t, 0.05); this.jetG.gain.setTargetAtTime(0, t, 0.05);
   }
 }

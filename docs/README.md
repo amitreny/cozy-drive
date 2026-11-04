@@ -24,7 +24,7 @@ You restore old cars found in barns, customize every part, and wander a small is
 
 - **Stack:** TypeScript + Vite, three.js (WebGPU with automatic WebGL2 fallback), Rapier physics (WASM), Preact for menus, IndexedDB for saves, a service worker for offline play.
 - **Vehicle physics:** custom ray/shape-cast wheels on a Rapier rigid body, fixed 120 Hz step, forgiving tyre curves, assists on by default.
-- **World:** 4 × 4 km island, 6 regions, 12 surface types, streamed in 128 m chunks. Vegetation is generated at runtime from rules, not downloaded.
+- **World:** an 8 × 8 km archipelago: the 4 × 4 km main island (6 regions) plus Longreach (joined by a causeway, with a 3.2 km airliner runway), Gull Isle, Pine Holm, Lantern Rock and the Seal Skerries. 12 surface types, streamed in 128 m chunks. Vegetation is generated at runtime from rules, not downloaded.
 - **Customization:** data-driven parts attached to sockets. A pure `resolveSpec` function turns a build into physics values. Paint, patterns and stickers are shader- and texture-driven.
 - **Cozy rules:** no fail states, no damage, no default timers. Terrain is a soft gate, and every gated area has a slower paved detour.
 - **Offline:** no network needed after the first visit; installable; saves stay local with export and import.

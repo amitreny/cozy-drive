@@ -1,3 +1,4 @@
+import { liftCoef } from '../flight/aero';
 import { AIRCRAFT, AIRCRAFT_ORDER, type AircraftSpec } from '../flight/specs';
 import type { AirPlace } from '../world/airports';
 import type { Job } from '../gameplay/jobs';
@@ -17,8 +18,11 @@ const stat = (spec: AircraftSpec): string => {
   if (spec.kind === 'heli') return `Hover anywhere · carries ${spec.capacity}`;
   if (spec.kind === 'balloon') return `Drifts with the wind · carries ${spec.capacity}`;
   const area = spec.surfaces.filter((s) => s.orient === 'h' && !s.downwash).reduce((a, s) => a + s.area, 0);
-  const vs = Math.sqrt((2 * spec.mass * 9.81) / (1.225 * area * 1.55)) * 3.6;
-  return `Lifts off ~${Math.round(vs * 1.15 / 5) * 5} km/h · carries ${spec.capacity}`;
+  // A jet's stubby delta can't reach its best lift on the runway: it flies off at the 10° rotation attitude.
+  const wing = spec.surfaces.find((s) => s.control === 'aileronL')!, jet = !!spec.engine?.jet;
+  const cl = jet ? liftCoef(10 * Math.PI / 180 + (wing.incidence ?? 0) - (wing.alpha0 ?? 0), wing.aspect, wing.clMax) : 1.55;
+  const vs = Math.sqrt((2 * spec.mass * 9.81) / (1.225 * area * cl)) * 3.6;
+  return `Lifts off ~${Math.round(vs * 1.15 / 5) * 5} km/h${jet ? ' · Mach 2 high up' : ''} · carries ${spec.capacity}`;
 };
 
 /** The hangar: choose, buy and fly an aircraft from an airfield, strip, helipad or dock. */

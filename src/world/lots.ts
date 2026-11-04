@@ -49,6 +49,9 @@ export const SETTLEMENTS: Settlement[] = [
   { id: 'reedmarsh', name: 'Reed Marsh', x: -860, z: -640, r: 220, houses: 3, shops: ['honey'] },
   { id: 'northshore', name: 'Northshore', x: -150, z: 1440, r: 320, houses: 6, shops: ['grocer'] },
   { id: 'passfoot', name: 'Pass Foot', x: 230, z: 520, r: 230, houses: 4, shops: [] },
+  // The outlying islands: Longreach's town by the causeway and airport, and the hamlet on Gull Isle.
+  { id: 'longreach', name: 'Longreach', x: 2650, z: -350, r: 480, houses: 10, shops: ['cafe', 'grocer'] },
+  { id: 'gullhaven', name: 'Gull Haven', x: -2760, z: 2410, r: 300, houses: 5, shops: ['fish'] },
 ];
 
 /** The village plaza: shops on a ring facing the centre, in the gaps between the roads (angles from +z). */
@@ -59,7 +62,7 @@ export const PLAZA_SHOPS: { angle: number; business: BusinessType }[] = [
 
 const BUSINESS_NAMES: Record<BusinessType, (town: string) => string> = {
   post: (t) => `${t} Post Office`, bakery: () => 'Crumb & Crust Bakery', cafe: (t) => (t === 'Hearthwick' ? 'The Kettle Café' : `${t} Café`),
-  grocer: (t) => `${t} Stores`, hardware: () => 'Nuts & Bolts Hardware', florist: () => 'Petal & Stem Florist', fish: () => 'Harbour Fish',
+  grocer: (t) => `${t} Stores`, hardware: () => 'Nuts & Bolts Hardware', florist: () => 'Petal & Stem Florist', fish: (t) => (t === 'Harbour' ? 'Harbour Fish' : `${t} Fish Shack`),
   woodworks: () => 'Pine Hollow Woodworks', farm: () => 'Canyon Ranch Farm Shop', honey: () => 'Reed & Honey', icecream: () => 'Dune Scoops',
 };
 const COTTAGE = ['Bramble', 'Willow', 'Honeysuckle', 'Foxglove', 'Thistle', 'Rosehip', 'Juniper', 'Clover', 'Sorrel', 'Hazel', 'Ivy', 'Larkspur', 'Primrose', 'Bluebell', 'Heather', 'Elder', 'Rowan', 'Marigold', 'Fern', 'Damson', 'Quince', 'Medlar', 'Sloe', 'Teasel'];

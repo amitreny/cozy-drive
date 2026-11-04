@@ -39,7 +39,7 @@ import { buildVillage } from './world/village';
 import { buildTown } from './world/town';
 import { loadTownModels } from './world/townModels';
 import { FlightSession } from './flight/session';
-import { APPROACH_RANGE, findApproach, type Approach } from './flight/approach';
+import { APPROACH_RANGE, approachSpeed, findApproach, type Approach } from './flight/approach';
 import { LandingGates } from './flight/landingGates';
 import type { AircraftSpec } from './flight/specs';
 import { Hangar } from './ui/hangar';
@@ -47,7 +47,7 @@ import { Deliveries, type Carrier, type DeliveriesData } from './gameplay/delive
 import { DeliveryMarkers } from './gameplay/deliveryMarkers';
 import { CAR_CAPACITY, cargoText, type Job } from './gameplay/jobs';
 import { JobBoard, Tracker } from './ui/jobBoard';
-import { allPlaces, along, nearPlace, type AirPlace, type Spot } from './world/airports';
+import { allPlaces, along, nearPlace, onAirfield, type AirPlace, type Spot } from './world/airports';
 import { buildAirports } from './world/airportsRender';
 
 interface SaveData { version: 1; worldVersion?: number; build: Build; assists: AssistLevel; pos: { x: number; z: number; yaw: number }; hours: number; progress?: ProgressData; fog?: string; mix?: AudioMix; station?: number; muted?: boolean; minimap?: boolean; minimapRotate?: boolean; fogVersion?: number; deliveries?: DeliveriesData }
@@ -76,7 +76,7 @@ async function boot(): Promise<void> {
   const sky = new Sky(scene);
   const skyEnv = new SkyEnvironment(sky);
   const fog = scene.fog as THREE.Fog;
-  fog.near = 500; fog.far = 3400;
+  fog.near = 900; fog.far = 7000;
   const terrain = new TerrainRenderer(world);
   const props = buildPropMeshes(scatter, world.size), casters = new NearShadowCasters(scatter);
   scene.add(casters.group);
@@ -121,6 +121,8 @@ async function boot(): Promise<void> {
   const gates = new LandingGates();
   scene.add(gates.group);
   let landingGuide = true, approach: Approach | null = null;
+  /** The jet's Mach number last frame (a boom as it crosses 1), and how long before the next Mach toast. */
+  let lastMach = 0, machToast = 0;
   // Deliveries: job boards at every business and the airfields' air-cargo offices.
   const deliveries = new Deliveries(world.lots, places, saved?.worldVersion === WORLD_VERSION ? saved?.deliveries : undefined);
   const markers = new DeliveryMarkers(world, deliveries.boards);
@@ -312,11 +314,16 @@ async function boot(): Promise<void> {
       : `✈ <b>${spec.name}</b> · R for throttle, steer with A/D, S to lift off around ${spec.id === 'poppy' ? 80 : spec.id === 'kestrel' ? 120 : 100} km/h · E to park`);
     persist();
   }
-  /** Land anywhere, stop, press E: park. At a base the car is in its car park; elsewhere the ground crew brings it to the nearest road. */
+  /**
+   * Land anywhere, stop, press E: park. Anywhere on an airfield (its runway, taxiways or apron) or near a pad or pier,
+   * your car is waiting there (by the hangar at an airfield); elsewhere the ground crew brings it to the nearest road.
+   */
   function landAndPark(): void {
     const a = flight.aircraft!, p = a.body.translation();
     let spot: Spot | null = null, name = '';
-    for (const pl of places) if (nearPlace(pl, p.x, p.z) < 150) { spot = pl.car; name = pl.name; break; }
+    const base = places.find((pl) => onAirfield(pl, p.x, p.z)) ?? places.find((pl) => nearPlace(pl, p.x, p.z) < 150);
+    if (base) { spot = base.car; name = base.name; }
+    const byHangar = base?.kind === 'airfield' || base?.kind === 'strip';
     if (!spot) {
       let best = 400;
       for (const r of world.roads) for (let i = 0; i < r.xs.length - 1; i += 2) {
@@ -328,7 +335,7 @@ async function boot(): Promise<void> {
     flight.stop();
     placeCar(spot); carSettle = 0;
     chase.snap(); input.clearPresses();
-    hud.toast(name ? `Parked at <b>${name}</b>. Your car is right here.` : 'Parked. The ground crew drove your car over to the nearest road.');
+    hud.toast(name ? `Parked at <b>${name}</b>. ${byHangar ? 'Your car is waiting by the hangar.' : 'Your car is right here.'}` : 'Parked. The ground crew drove your car over to the nearest road.');
     safe = { ...spot }; persist();
   }
   function toggleGarage(open: boolean): void {
@@ -396,12 +403,29 @@ async function boot(): Promise<void> {
     hud.updateApproach(approach, a);
     gates.update(approach);
     audio.updateAircraft(a, chase.mode === 'hood');
+    if (input.consume('instruments')) hud.toast(hud.toggleInstruments() ? 'Instruments <b>on</b> · I' : 'Instruments <b>hidden</b> · I to bring them back');
     if (input.consume('flaps')) { const f = flight.cycleFlaps(); if (a.spec.engine?.maxFlaps) hud.toast(`Flaps ${Math.round(f * a.spec.engine.maxFlaps * 180 / Math.PI)}°`); }
+    if (a.spec.retractGear && input.consume('garage')) {
+      if (a.onGround) hud.toast('The gear stays down while it carries the weight');
+      else if (a.airspeed > a.spec.retractGear.maxSpeed) hud.toast(`Too fast to move the gear: slow below <b>${Math.round(a.spec.retractGear.maxSpeed * 3.6)} km/h</b>`);
+      else if (a.setGear(!a.gearDown)) hud.toast(`Gear <b>${a.gearDown ? 'down' : 'up'}</b> · G`);
+    }
+    // Gear still up, low and slow, coming down: the relaxed assist lowers it for you; otherwise a warning.
+    const gearWarn = !!a.spec.retractGear && !a.gearDown && !a.onGround && a.agl < 200 && a.vs < -1 && a.airspeed < 1.6 * approachSpeed(a.spec);
+    if (gearWarn && assists === 'relaxed') { a.setGear(true); hud.toast('Gear <b>down</b> for landing (relaxed assist) · G'); }
+    // Through the sound barrier: the boom (your shock wave sweeping the ground behind you).
+    machToast -= dt;
+    if (a.mach >= 1 && lastMach < 1 && !a.onGround) {
+      audio.boom();
+      if (machToast <= 0) { hud.toast('💥 <b>Mach 1</b>: through the sound barrier!'); machToast = 30; }
+    }
+    lastMach = a.mach;
     const landed = a.onGround && a.groundSpeed < 1.5 && !a.crashed;
     if (input.consume('interact') && landed && !a.onWater) landAndPark();
     else if (input.consume('interact') && landed && a.onWater) hud.toast('Taxi to a dock or a beach to park the seaplane');
     let prompt: string | null = null;
     if (a.stall > 0.5) prompt = 'Stall! Lower the nose and add power';
+    else if (gearWarn) prompt = 'Gear up! Press G to lower the landing gear';
     else if (landed && !a.onWater) prompt = a.spec.kind === 'balloon' ? 'Landed · press E to pack up the balloon' : 'Stopped · press E to park and take your car';
     else if (a.spec.kind === 'plane' && a.onGround && a.throttle < 0.05 && a.groundSpeed < 1) prompt = 'Hold R to open the throttle';
     hud.showPrompt(prompt);
@@ -413,7 +437,7 @@ async function boot(): Promise<void> {
         // The runway's end may be far from the crash: load the ground there before the next physics step.
         const p = a.body.translation(); terrainPhysics.update(p.x, p.z, 300, 999);
         chase.snap(); fade.style.opacity = '0'; crashFade = 0;
-        hud.toast(`${why === 'water' ? 'Splash!' : 'Oof.'} The mechanics patched the ${a.spec.name} up · back at ${flight.home?.name}${runway ? `, lined up on runway ${runway} with the engine running · R to go` : ''}`);
+        hud.toast(`${why === 'water' ? 'Splash!' : why === 'gear up' ? 'Scrape! That was a wheels-up landing.' : 'Oof.'} The mechanics patched the ${a.spec.name} up · back at ${flight.home?.name}${runway ? `, lined up on runway ${runway} with the engine running · R to go` : ''}`);
       }, 700);
     }
   }
@@ -427,7 +451,7 @@ async function boot(): Promise<void> {
     flight.wind.update(dt);
     const focus = air ? ac!.body.translation() : vehicle.body.translation();
     const focusYaw = air ? ac!.heading : vehicle.yaw;
-    if (input.consume('garage') && !mapView.open && !air && !hangar.open) toggleGarage(!garage.open);
+    if (!air && input.consume('garage') && !mapView.open && !hangar.open) toggleGarage(!garage.open);
     if (input.consume('map') && !garage.open) { mapView.toggle(); loop.timeScale = mapView.open ? 0 : 1; mapTimer = 1; }
     if (mapView.open) { mapTimer += dt; if (mapTimer > 0.1) { mapTimer = 0; mapView.draw(focus.x, focus.z, focusYaw); } }
     if (input.consume('autopilot') && !air) {
@@ -478,7 +502,7 @@ async function boot(): Promise<void> {
     if (input.consume('settings') && !garage.open && !mapView.open) { settings.toggle(); loop.timeScale = settings.open ? 0 : 1; if (!settings.open) persist(); }
     if (input.consume('minimap')) { minimap.setVisible(!minimap.visible); persist(); }
     if (!air) { approach = null; hud.updateApproach(null, null); gates.update(null); }
-    minimap.range = !air ? 320 : ac!.spec.kind === 'plane' ? 3000 : 1200;
+    minimap.range = !air ? 320 : ac!.spec.engine?.jet ? 6000 : ac!.spec.kind === 'plane' ? 3000 : 1200;
     minimap.update(dt, focus.x, focus.z, focusYaw);
     if (input.consume('radio') && radio) hud.toast(`♪ <b>${radio.tune()}</b>`);
     if (ambience) {
@@ -519,6 +543,14 @@ async function boot(): Promise<void> {
     const envTex = skyEnv.update(renderer, dt);
     visual.setEnvironment(envTex);
     water.update(dt, envTex);
+    // High up (a jet climbs past 10 km) the air is clear and you see far: the fog and the view open out with the
+    // camera's height, and the near plane steps back to keep the depth buffer sharp over that range.
+    const above = Math.max(0, camera.position.y - 300);
+    // On the ground the haze still lets you see the other islands across the water (3–5 km off).
+    fog.near = 900 + above * 1.5; fog.far = 7000 + above * 6;
+    const far = Math.max(9000, fog.far * 1.2), near = Math.min(chase.mode === 'hood' ? 1.5 : 6, 0.1 + above / 2000); // a rotor disc is ~2 m from a pilot's eye
+    if (camera.far !== far || camera.near !== near) { camera.far = far; camera.near = near; camera.updateProjectionMatrix(); }
+    water.follow(camera.position);
     grass.update(dt, camera.position, focusPos);
     wind.value += dt;
     postfx.setTimeOfDay(sky.hours);

@@ -47,7 +47,7 @@ Starting values only. Tune them on the proving ground against the acceptance tar
 
 ## World structure
 
-- **Size:** 4 × 4 km island, origin at the centre. Float32 precision is fine at this size. Floating origin is only needed if the world grows past ~8 km.
+- **Size:** an 8 × 8 km archipelago, origin at the centre of the 4 × 4 km main island (see [decisions/0009](decisions/0009-archipelago.md)). Float32 precision is fine at this size; a floating origin would only be needed if the world grew further.
 - **Grid:** 128 m chunks (32 × 32 = 1024). Chunks are packed into **512 m region packs** (64 files, ~100–200 KB compressed each) to keep request counts low.
 - **Always resident:** a whole-island low-LOD terrain mesh (16 m spacing, ~65 k vertices). There are never holes at the horizon.
 

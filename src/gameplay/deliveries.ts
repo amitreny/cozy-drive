@@ -20,7 +20,7 @@ export class Deliveries {
   constructor(private lots: Lot[], private places: AirPlace[], data?: DeliveriesData) {
     this.boards = [
       ...lots.filter((l) => l.kind === 'shop').map((l) => ({ id: l.id, name: l.name, x: l.front[0], z: l.front[1], business: l.business })),
-      ...places.filter((p) => p.kind === 'airfield' || p.kind === 'strip').map((p) => ({ id: p.id, name: `${p.name} air cargo`, x: p.car.x, z: p.car.z, place: p })),
+      ...places.filter((p) => p.kind === 'airfield' || p.kind === 'strip').map((p) => ({ id: p.id, name: `${p.name} air cargo`, x: (p.cargo ?? p.car).x, z: (p.cargo ?? p.car).z, place: p })),
     ];
     if (data) {
       this.batches = { ...data.batches }; this.taken = new Set(data.taken); this.delivered = data.delivered ?? 0;

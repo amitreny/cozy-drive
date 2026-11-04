@@ -61,10 +61,18 @@ export interface PropVisual {
 export interface EngineSpec {
   power: number; staticThrust: number; propPos: V; propRadius: number; rpm: number; maxFlaps: number;
   props?: number; thrustFade?: number; idle?: number; turbine?: boolean;
+  /**
+   * Afterburning turbofans instead of a propeller: sea-level static thrust (N, all engines) at full dry power and in
+   * full afterburner, and their nozzles (body frame) and radius for the flame. `rpm` is then the core speed in %.
+   */
+  jet?: { dry: number; wet: number; nozzles: V[]; nozzleRadius: number };
 }
 
-/** Landing gear for a model drawn without any: sprung legs (from `legRoot`, mirrored) and spats to the braked wheels, a tailwheel. */
-export interface FittedGear { legRoot: V; wheelRadius: number; legColor: number; spatColor: number }
+/**
+ * Landing gear for a model drawn without any: sprung legs (from `legRoot`, mirrored) to the braked wheels, with
+ * spats if `spatColor` is set; a nosewheel leg (a steered wheel ahead of the centre of gravity) or a small tailwheel.
+ */
+export interface FittedGear { legRoot: V; wheelRadius: number; legColor: number; spatColor?: number; noseWheelRadius?: number }
 
 export interface AircraftSpec {
   id: string; name: string; kind: AircraftKind; blurb: string; realType: string;
@@ -80,11 +88,28 @@ export interface AircraftSpec {
   bodyCdA: V;
   engine?: EngineSpec;
   prop?: PropVisual;
-  /** Relaxed assist: pitch and roll rate (rad/s) at full stick (a light aircraft: 0.45 and 1.2). */
-  handling?: { pitchRate: number; rollRate: number };
+  /**
+   * Relaxed assist: pitch and roll rate (rad/s) at full stick (a light aircraft: 0.45 and 1.2). `gLimit`: a
+   * fly-by-wire jet's load limit. Its control computer then scales the surfaces back as the airspeed builds, so full
+   * stick always pulls about the same g, never more than this, instead of tearing the wings off at Mach 1.
+   * `agile`: a fighter's flight computer. No bank limit (it rolls right round and loops), the wings still level
+   * when you let go of the roll, and its pitch and roll loops are stiffer, so the g comes on at once.
+   */
+  handling?: { pitchRate: number; rollRate: number; gLimit?: number; agile?: boolean };
   /** Shortest runway (m) it can be flown from; a base without one won't have it in the hangar. */
   minRunway?: number;
   fittedGear?: FittedGear;
+  /** Retractable gear (G): its drag area (m²) when down, the seconds it takes to travel, and the fastest (m/s) it may move. */
+  retractGear?: { drag: number; time: number; maxSpeed: number };
+  /**
+   * Airbrake or spoilers (Space): `drag`, the drag area (m²) fully out. Spoilers also spoil `liftDump` of the wing's
+   * lift, and pop up by themselves on the runway with the power at idle (ground spoilers: the weight goes onto the
+   * wheels, so the brakes bite). `panels` are drawn on the airframe (body frame): each hinged at the middle of its
+   * front edge, `size` [span, chord], opening by `angle` (rad); `mirror` repeats them on the other side.
+   */
+  airbrake?: { name: string; drag: number; liftDump?: number; panels: { pos: V; size: [number, number]; angle: number }[]; mirror?: boolean; color: number };
+  /** Boxes (body frame, [min, max]): model parts lying wholly inside one are left off (stores under the wings). */
+  strip?: [V, V][];
   /**
    * `power` is at sea level: a turboshaft's falls with the air's density, which sets the helicopter's ceiling.
    * `climb`: the climb rate (m/s) full collective asks for on the easier assists. `tail`: where the tail rotor
@@ -277,6 +302,11 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
       colors: { front: 0x3b3f43, rear: 0x1c1c1c, tips: [0xf2c230] },
       strip: [],
     },
+    // Two spoilers on each wing outboard of the nacelles, ahead of the flaps (as on the Dash 8).
+    airbrake: {
+      name: 'spoilers', drag: 2.4, liftDump: 0.55, mirror: true, color: 0xe9ecef,
+      panels: [{ pos: [5.6, 1.62, -0.2], size: [1.5, 0.5], angle: 55 * deg }, { pos: [7.4, 1.66, -0.25], size: [1.5, 0.45], angle: 55 * deg }],
+    },
     minRunway: 800,
     gear: [
       { pos: [0, -2.1, 6.65], travel: 0.3, type: 'wheel', steer: 30 * deg },
@@ -284,6 +314,48 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
       { pos: [-4.16, -2.1, -0.55], travel: 0.32, type: 'wheel', brake: true },
     ],
     capacity: 10, price: 2600, eye: [0.55, 0.98, 6.4],
+  },
+  // Eurofighter Typhoon-class supersonic jet: two afterburning turbofans (EJ200 class, 60 kN dry and 90 kN wet each)
+  // on a 14-tonne airframe with a 51 m² low-aspect wing. More thrust than weight in afterburner, so it climbs like a
+  // rocket; supersonic in level flight, near Mach 2 up high. The model is a twin-finned delta, scaled to the
+  // Typhoon's 11 m span, its under-wing stores left off, standing on fitted tricycle gear that folds away.
+  peregrine: {
+    id: 'peregrine', name: 'Peregrine', kind: 'plane', realType: 'Supersonic jet (Eurofighter Typhoon class)',
+    blurb: 'Two afterburning jets: rotates at 300 km/h, breaks the sound barrier in level flight and tops out near Mach 2 at 11,000 m. Gear up with G, airbrake with Space. Needs the long runway.',
+    model: 'jet', credit: '"Jet" by jeremy (CC BY 3.0)',
+    // The model's centre of gravity sits just ahead of the wing's quarter chord, its fuselage 1 m off the ground.
+    modelScale: 1.1, modelYaw: 0, modelOffset: [0, 0.908, 0.51],
+    mass: 14_000, inertia: [110_000, 125_000, 22_000],
+    hull: [
+      { half: [0.75, 0.55, 6.0], pos: [0, 0.05, 0.5] }, { half: [5.48, 0.1, 1.8], pos: [0, 0, -2.8] },
+      { half: [1.75, 0.8, 0.9], pos: [0, 1.05, -4.4] },
+    ],
+    surfaces: [
+      // A delta: low aspect ratio (2.3), so it needs a high angle of attack to fly slowly (about 14° on approach).
+      ...wing({ y: 0, z: -0.2, area: 51.2, span: 10.96, dihedral: 0, incidence: 1.5 * deg, alpha0: 0, clMax: 1.2, cd0: 0.006, e: 0.7, tau: 0.35, aileronSpan: 0.5 }),
+      // All-moving tailplanes (the whole surface turns), and the twin fins as one.
+      { pos: [0, 0, -4.9], area: 8, aspect: 3, orient: 'h', incidence: 0, clMax: 1.0, cd0: 0.006, control: 'elevator', tau: 0.8, downwash: true },
+      { pos: [0, 0.95, -4.4], area: 5, aspect: 1.3, orient: 'v', clMax: 0.9, cd0: 0.006, control: 'rudder', tau: 0.5 },
+    ],
+    bodyCdA: [10, 22, 0.5],
+    // Typhoon-class agility: ~240°/s roll, 9 g.
+    handling: { pitchRate: 0.7, rollRate: 4.2, gLimit: 9, agile: true },
+    engine: {
+      power: 0, staticThrust: 180_000, propPos: [0, 0.02, -5.0], propRadius: 0, rpm: 100, maxFlaps: 0, idle: 0.6, turbine: true,
+      jet: { dry: 120_000, wet: 180_000, nozzles: [[0.77, 0.02, -5.55], [-0.77, 0.02, -5.55]], nozzleRadius: 0.34 },
+    },
+    retractGear: { drag: 0.6, time: 5, maxSpeed: 150 },
+    // A dorsal airbrake behind the canopy, hinged at its front edge.
+    airbrake: { name: 'airbrake', drag: 1.3, panels: [{ pos: [0, 0.6, 1.6], size: [1.0, 1.3], angle: 50 * deg }], color: 0x4a5a66 },
+    strip: [[[1.8, -1.0, -4.2], [4.0, 0.06, 1.6]], [[-4.0, -1.0, -4.2], [-1.8, 0.06, 1.6]]],
+    fittedGear: { legRoot: [0.95, -0.55, -0.85], wheelRadius: 0.36, noseWheelRadius: 0.27, legColor: 0x9aa3aa },
+    minRunway: 800,
+    gear: [
+      { pos: [0, -1.7, 3.6], travel: 0.3, type: 'wheel', steer: 30 * deg },
+      { pos: [1.25, -1.7, -1.0], travel: 0.3, type: 'wheel', brake: true },
+      { pos: [-1.25, -1.7, -1.0], travel: 0.3, type: 'wheel', brake: true },
+    ],
+    capacity: 1, price: 5200, eye: [0, 0.75, 3.9],
   },
   // Bell 206-class light helicopter: lands anywhere flat, including the summit pad and village helipad.
   hummingbird: {
@@ -348,4 +420,4 @@ export const AIRCRAFT: Record<string, AircraftSpec> = {
   },
 };
 
-export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'pelican', 'dandelion', 'kestrel', 'heron'];
+export const AIRCRAFT_ORDER = ['wren', 'poppy', 'puffin', 'hummingbird', 'pelican', 'dandelion', 'kestrel', 'heron', 'peregrine'];

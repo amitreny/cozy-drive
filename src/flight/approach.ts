@@ -40,8 +40,11 @@ export interface Approach {
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-/** Aim point: 150 m past the threshold, or less on a short strip. */
-export const aimDistance = (halfLen: number) => Math.min(150, halfLen * 0.3);
+/**
+ * Aim point: 150 m past the threshold, or less on a short strip. On an airliner runway (2.4 km and longer) it is
+ * the touchdown zone 300 m in, where the big aiming-point bars are painted.
+ */
+export const aimDistance = (halfLen: number) => (halfLen >= 1200 ? 300 : Math.min(150, halfLen * 0.3));
 
 /**
  * The approach you're flying, if any: the runway end ahead of you, within range, that your heading points

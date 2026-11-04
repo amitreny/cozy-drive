@@ -4,7 +4,7 @@
 
 ## Aircraft (`src/flight/`)
 
-Eight aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are credited in CREDITS.md and in the hangar. The Heron's model is a CC0 An-24-style twin turboprop, converted from its .blend by `tools/blend2glb.mjs` (a small .blend reader in `tools/blendfile.mjs`).
+Nine aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are credited in CREDITS.md and in the hangar. The Heron's model is a CC0 An-24-style twin turboprop, converted from its .blend by `tools/blend2glb.mjs` (a small .blend reader in `tools/blendfile.mjs`).
 
 | Aircraft | Real type | Notes |
 |---|---|---|
@@ -16,12 +16,29 @@ Eight aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 | Pelican | Sea King / S-61 class | wheels, 19 m four-blade rotor, twin turbines: climbs ~10 m/s, past 6 km |
 | Dandelion | 2,200 m³ hot-air balloon | basket |
 | Heron | Dash 8-100-class regional turboprop | 14 t, twin turboprops, needs an 800 m runway |
+| Peregrine | Eurofighter Typhoon-class supersonic jet | 14 t, two afterburning turbofans, retractable gear, needs an 800 m runway |
 
-**The Heron is a regional turboprop rather than a jet** because a narrow-body jet needs about 1.8–2 km of runway and the island's longest is 900 m. It flies from Island Airfield on its real numbers.
+**The Heron is a regional turboprop rather than a jet** because a narrow-body jet needs about 1.8–2 km of runway and the island's longest was 900 m. It flies from Island Airfield (now 1.2 km) on its real numbers. Airliners have since got a home: Longreach International's 3.2 km code E runway (see [0009](0009-archipelago.md)).
 - Two 1,490 kW engines with 3.96 m four-blade constant-speed propellers. Static thrust fades more slowly with speed than a fixed-pitch prop's.
 - The turbines take 2.5 s to light (no thrust until then), and their power lags the lever. The HUD shows torque.
 - The centre of gravity sits near the wing's quarter chord, as on an airliner, so the tail does the stabilising.
 - The relaxed assist commands an airliner's pitch and roll rates (`handling`). On the ground, its attitude hold has an integral term so the heavy tail can rotate the aircraft.
+
+**Airbrakes and spoilers (Space), only where the real type has them** (`airbrake` in the spec):
+- **Peregrine:** a dorsal airbrake (drag only).
+- **Heron:** two spoilers per wing outboard of the nacelles, as on the Dash 8. They add 2.4 m² of drag and spoil 55 % of the wing's lift, so the stall speed rises while they're out. As ground spoilers they pop up by themselves on the runway at idle power above 15 m/s: the weight goes onto the wheels and the brakes bite, shortening the landing roll.
+- The panels are drawn on the airframe, hinged at their front edge, and open as they deploy. The airflow noise rises with them.
+- The light aircraft (Wren, Poppy, Puffin, Kestrel) have none, as their real types don't. Pilots slow them with idle power (a windmilling propeller is a strong brake), flaps or a sideslip.
+
+**The Peregrine is a fighter-class jet**, which (unlike an airliner) fits the 900 m runway: in afterburner it has more thrust than weight. Its model is a CC BY twin-finned delta from Poly Pizza, scaled to the Typhoon's 11 m span. The under-wing stores are left off, and it stands on fitted tricycle gear.
+- **Engines:** two EJ200-class turbofans, 2 × 60 kN dry and 2 × 90 kN wet. The last 15 % of the throttle goes through the gate into afterburner, which lights once the core is near full power. The core spools up in about four seconds. Thrust falls with density (σ^0.9) and gains with ram pressure (1 + 0.2 M²).
+- **Wave drag:** zero-lift drag grows from Mach 0.8 to 2.6× at Mach 1.05, then eases to 1.8× by Mach 2. So it is subsonic on dry power low down and supersonic in afterburner (Mach 1.05–1.3 at sea level), and the thin, cold air at 11 km lets it reach Mach 1.7–2.1. The speed of sound follows ISA temperature (340 m/s at sea level, 295 m/s above the tropopause).
+- **Fly-by-wire:** above the corner speed (where full stick at the stall angle pulls the g limit), the control surfaces are scaled back with dynamic pressure, so the stick commands g rather than deflection. The relaxed assist also caps the pitch rate at the 9 g limit (the Typhoon's).
+- **Agile flight computer** (`handling.agile`): on the relaxed assist the jet has no bank limit (it rolls right round, about 230°/s, and loops), levels its wings whenever you let go of the roll (even from inverted), and has stiffer pitch and roll loops, so the g comes on at once. The light aircraft and the Heron keep the gentle trainer-style assist. Without this, at Mach 1 the surfaces would be ten times too strong and the control loops would oscillate.
+- **Retractable gear (G):** it won't come up with weight on the wheels, won't move above 540 km/h, takes 5 s to travel, and adds 0.6 m² of drag while down. Touching down with it up is a crash (a belly landing). On the relaxed assist it lowers itself when you descend below 200 m at approach speeds.
+- **Airbrake:** Space puts out its dorsal airbrake behind the canopy (1.3 m² of drag).
+- **Rapier's speed cap:** Rapier caps a body's speed at 400 m/s per length unit. While a jet flies, the world's length unit is 2 (800 m/s). It is raised only then, because it also scales the contact tolerances the cars are tuned with.
+- **Effects:** afterburner flames, a vapour cone near Mach 1 in the damp air low down, and a double sonic boom as you cross Mach 1. The fog and the camera's far plane open out with height, and the sea follows the camera, so from 12 km you see the island as a speck in an ocean that reaches the horizon.
 
 **Fixed-wing physics is built from the airframe, not from a table of stability derivatives.**
 - Each wing has four panels: inner panels with flaps and outer panels with ailerons. With the tailplane and fin, each panel computes its own local airflow, including the body's rotation, plus wind and propeller slipstream on the tail.
@@ -59,6 +76,8 @@ Eight aircraft, each modelled on a real type. The CC BY 3.0 and CC0 models are c
 | Hummingbird | hovers hands-off and climbs |
 | Pelican | hovers hands-off; climbs above 8.5 m/s (the Hummingbird under 4.5); the Hummingbird can't climb at 5.5 km, the Pelican still can at 6.5 km and can't at 8 km |
 | Dandelion | holds level near its equilibrium temperature, climbs on the burner, sinks on the vent |
+| Airbrakes (`tests/airbrake.test.ts`) | only the jet and the airliner have them; the jet's airbrake at least 1.4× the speed loss at idle; spoilers out make the Heron sink 3 m/s faster on the same stick; ground spoilers deploy on the landing roll and shorten it |
+| Peregrine (`tests/jet.test.ts`) | lift-off at 280–390 km/h after 300–700 m in afterburner; subsonic on full dry power at sea level, Mach 1.05–1.3 in afterburner; Mach 1.7–2.1 at 11 km; full stick at 300 m/s pulls 5–8.5 g (6.5+ within 2 s); rolls past 200°/s with no bank limit and levels its wings hands-off; gear only comes up in the air and below its speed limit; a wheels-up landing is a crash; approach speed 250–310 km/h |
 | Heron | no thrust until the turbines light; with a notch of flap, lift-off at 46–57 m/s after 350–650 m; 430–490 km/h low down; clean stall 44–52 m/s; brakes to a stop from 45 m/s in under 450 m; hands-off stable, airliner roll and pitch rates; offered only at runways of 800 m or more |
 | All | a crash is detected |
 

@@ -6,6 +6,12 @@ export const G = 9.81;
 /** ISA density at altitude h (m). */
 export const density = (h: number): number => RHO0 * Math.pow(Math.max(0.2, 1 - 2.2558e-5 * h), 4.2559);
 
+/** ISA temperature (K): falls 6.5 K per km up to the tropopause at 11 km, then holds at −56.5 °C. */
+export const temperature = (h: number): number => Math.max(216.65, T0 - 0.0065 * h);
+
+/** Speed of sound (m/s) at altitude h: 340 at sea level, 295 above 11 km (it depends only on the temperature). */
+export const speedOfSound = (h: number): number => Math.sqrt(1.4 * 287.05 * temperature(h));
+
 /**
  * The island's prevailing surface wind blows towards 320° (a sea breeze from the south-east), which is why its
  * runways were laid out on 140–150°/320–330°: most days you take off into wind, with a little crosswind at most.
